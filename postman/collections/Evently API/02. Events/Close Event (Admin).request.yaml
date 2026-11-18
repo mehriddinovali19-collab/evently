@@ -1,9 +1,0 @@
-$kind: http-request
-description: Admin tadbirni muddatidan oldin yopishi. Yopilgan tadbirlarga qatnashuvchilar yozila olmaydi.
-url: "{{baseUrl}}/api/v1/events/{{eventId}}/close/"
-method: POST
-auth:
-  type: bearer
-  credentials:
-    token: "{{adminAccessToken}}"
-order: 5000

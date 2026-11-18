@@ -1,9 +1,0 @@
-$kind: http-request
-description: "Faqat Admin ko'ra oladi: Tadbirga yozilgan barcha faol qatnashuvchilar ro'yxati."
-url: "{{baseUrl}}/api/v1/events/{{eventId}}/participants/"
-method: GET
-auth:
-  type: bearer
-  credentials:
-    token: "{{adminAccessToken}}"
-order: 7000

@@ -1,9 +1,0 @@
-$kind: http-request
-description: Foydalanuvchi o'zi yozilgan tadbirdan chiqadi. Joy qayta bo'shaydi.
-url: "{{baseUrl}}/api/v1/events/{{eventId}}/unregister/"
-method: POST
-auth:
-  type: bearer
-  credentials:
-    token: "{{accessToken}}"
-order: 2000

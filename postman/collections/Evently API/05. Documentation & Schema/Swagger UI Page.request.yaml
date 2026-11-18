@@ -1,5 +1,0 @@
-$kind: http-request
-description: Swagger interfeysining HTML sahifasi.
-url: "{{baseUrl}}/api/docs/"
-method: GET
-order: 2000
