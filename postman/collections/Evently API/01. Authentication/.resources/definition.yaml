@@ -1,0 +1,3 @@
+$kind: collection
+description: Foydalanuvchini ro'yxatdan o'tkazish, tizimga kirish (JWT), tokenni yangilash va profil boshqaruvi.
+order: 1000

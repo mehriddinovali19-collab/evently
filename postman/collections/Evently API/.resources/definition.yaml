@@ -1,0 +1,2 @@
+$kind: collection
+description: Evently tadbirlarni boshqarish platformasi uchun to'liq REST API kolleksiyasi. README.md dagi barcha endpointlar, validation namunalari va test skriptlari bilan.

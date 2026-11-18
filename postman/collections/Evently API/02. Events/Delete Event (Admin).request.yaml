@@ -1,0 +1,9 @@
+$kind: http-request
+description: Admin tomonidan tadbirni butunlay o'chirish.
+url: "{{baseUrl}}/api/v1/events/{{eventId}}/"
+method: DELETE
+auth:
+  type: bearer
+  credentials:
+    token: "{{adminAccessToken}}"
+order: 6000

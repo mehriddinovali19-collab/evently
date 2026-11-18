@@ -1,0 +1,20 @@
+[project]
+name = "evently"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "aiogram>=3.32.0",
+    "django>=5.2.19",
+    "django-cors-headers>=4.9.0",
+    "django-environ>=0.14.0",
+    "django-filter>=26.2",
+    "django-jazzmin>=3.0.5",
+    "djangorestframework>=3.18.3",
+    "djangorestframework-simplejwt>=5.5.1",
+    "drf-spectacular>=0.30.0",
+    "httpx>=0.28.1",
+    "psycopg[binary]>=3.3.9",
+    "pytest-django>=4.14.0",
+]

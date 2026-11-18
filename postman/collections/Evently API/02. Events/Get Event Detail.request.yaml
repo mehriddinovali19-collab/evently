@@ -1,0 +1,5 @@
+$kind: http-request
+description: Bitta tadbir haqida to'liq batafsil ma'lumot olish.
+url: "{{baseUrl}}/api/v1/events/{{eventId}}/"
+method: GET
+order: 2000

@@ -1,0 +1,933 @@
+# Evently — Loyihani amalga oshirish rejasi va Kodlar Qo'llanmasi (Plan & Code Guide)
+
+> **Sizning rolingiz:** Backend Dasturchi (kodlarni o'zingiz yozasiz, tahlil qilasiz va ishga tushirasiz).  
+> **Mening rolim:** Sizning Mentoringiz (yo'nalish beraman, real kod namunalari va tushuntirishlar bilan qo'llab-quvvatlayman, natijalarni tekshiraman).
+
+---
+
+## 📌 Status belgilari:
+- `[ ]` — Bajarilmagan
+- `[/]` — Jarayonda
+- `[x]` — Bajarildi va tekshirildi
+
+---
+
+## 1-BOSQICH (1-kun): Muhitni sozlash, Loyiha arxitekturasi va Custom User modeli
+
+### 🎯 Maqsad:
+Kutubxonalarni o'rnatish, loyiha tuzilmasini yaratish va eng muhimi — birinchi `migrate` dan oldin to'g'ri **Custom User** modelini va uning Managerini yaratish.
+
+---
+
+### 📋 Vazifalar va Real Kod Misollari:
+
+#### 1.1. `requirements.txt`
+Loyihaning ildiz papkasida `requirements.txt` faylini yarating va quyidagi kutubxonalarni yozing:
+
+```txt
+Django>=5.0,<6.0
+djangorestframework>=3.15.0
+djangorestframework-simplejwt>=5.3.0
+psycopg[binary]>=3.1.0
+python-dotenv>=1.0.0
+django-environ>=0.11.0
+django-filter>=24.0
+django-cors-headers>=4.3.0
+drf-spectacular>=0.27.0
+aiogram>=3.4.0
+httpx>=0.27.0
+pytest>=8.0.0
+pytest-django>=4.8.0
+```
+Terminalda o'rnatish:
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+#### 1.2. Loyiha strukturasi
+Loyiha papkasida `config` loyihasini va `apps` papkasini tashkil qiling:
+```bash
+django-admin startproject config .
+mkdir apps
+# Windows PowerShell uchun bo'sh __init__.py yaratish:
+New-Item -ItemType File apps/__init__.py
+```
+
+`users` app'ini yaratish:
+```bash
+python manage.py startapp users apps/users
+```
+
+---
+
+#### 1.3. `.env` va `config/settings.py` sozlash
+`.env` faylini quyidagicha to'ldiring:
+```env
+DEBUG=True
+SECRET_KEY=django-insecure-secret-key-change-in-production
+ALLOWED_HOSTS=localhost,127.0.0.1
+TIME_ZONE=Asia/Tashkent
+
+DB_NAME=evently
+DB_USER=postgres
+DB_PASSWORD=your_password
+DB_HOST=localhost
+DB_PORT=5432
+
+ACCESS_TOKEN_LIFETIME_MINUTES=60
+REFRESH_TOKEN_LIFETIME_DAYS=7
+
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
+
+TELEGRAM_BOT_TOKEN=your_bot_token_from_botfather
+TELEGRAM_BOT_USERNAME=your_bot_username
+BOT_API_SECRET=my-very-secure-secret-token-123
+BACKEND_API_URL=http://localhost:8000/api/v1
+REMINDER_HOURS_BEFORE=24
+```
+
+`config/settings.py` ichida:
+```python
+import os
+from pathlib import Path
+from datetime import timedelta
+import environ
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+env = environ.Env(
+    DEBUG=(bool, False)
+)
+environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
+
+SECRET_KEY = env('SECRET_KEY')
+DEBUG = env('DEBUG')
+ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['*'])
+
+INSTALLED_APPS = [
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+    # Third party
+    'rest_framework',
+    'rest_framework_simplejwt',
+    'corsheaders',
+    'django_filters',
+    'drf_spectacular',
+    # Local apps
+    'apps.users',
+    # 'apps.events',         # keyingi qadamlarda qo'shiladi
+    # 'apps.notifications',  # keyingi qadamlarda qo'shiladi
+]
+
+MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',  # Eng tepada bo'lishi maqsadga muvofiq
+    'django.middleware.security.SecurityMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
+# Database sozlamasi
+DATABASES = {
+    'default': env.db_url('DATABASE_URL', default=f"postgres://{env('DB_USER')}:{env('DB_PASSWORD')}@{env('DB_HOST')}:{env('DB_PORT')}/{env('DB_NAME')}")
+}
+
+# Vaqt mintaqasi
+TIME_ZONE = env('TIME_ZONE', default='Asia/Tashkent')
+USE_TZ = True
+
+# Custom User Model (Migratsiyadan oldin shart!)
+AUTH_USER_MODEL = 'users.User'
+```
+
+---
+
+#### 1.4. Custom User modeli va Manager (`apps/users/models.py`)
+> ⚠️ **Muhim:** `AbstractUser` da login `username` orqali bo'ladi. Bizga esa **email** orqali kerak. Shuning uchun `UserManager` ni qayta yozishimiz shart.
+
+```python
+# apps/users/models.py
+from django.contrib.auth.models import AbstractUser, BaseUserManager
+from django.db import models
+
+class UserManager(BaseUserManager):
+    """Email orqali foydalanuvchi yaratuvchi Custom Manager"""
+    def create_user(self, email, password=None, **extra_fields):
+        if not email:
+            raise ValueError("Email kiritilishi shart!")
+        email = self.normalize_email(email)
+        user = self.model(email=email, **extra_fields)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, email, password=None, **extra_fields):
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+        extra_fields.setdefault('role', User.Role.ADMIN)
+
+        if extra_fields.get('is_staff') is not True:
+            raise ValueError("Superuser is_staff=True bo'lishi shart.")
+        if extra_fields.get('is_superuser') is not True:
+            raise ValueError("Superuser is_superuser=True bo'lishi shart.")
+
+     
+        return self.create_user(email, password, **extra_fields)
+
+
+class User(AbstractUser):
+    class Role(models.TextChoices):
+        ADMIN = 'admin', 'Admin'
+        USER = 'user', 'User'
+
+    username = None  # username maydonini olib tashlaymiz
+    email = models.EmailField(unique=True)
+    first_name = models.CharField(max_length=150, blank=True)
+    last_name = models.CharField(max_length=150, blank=True)
+    phone_number = models.CharField(max_length=20, blank=True)
+    role = models.CharField(max_length=10, choices=Role.choices, default=Role.USER)
+    
+    # Telegram integratsiyasi uchun
+    telegram_chat_id = models.BigIntegerField(null=True, blank=True, unique=True)
+    telegram_link_token = models.CharField(max_length=64, null=True, blank=True, unique=True)
+
+    objects = UserManager()
+
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = []  # createsuperuser da faqat email va password so'raladi
+
+    def __str__(self):
+        return f"{self.email} ({self.role})"
+```
+
+---
+
+#### 1.5. Django Admin (`apps/users/admin.py`)
+```python
+# apps/users/admin.py
+from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from .models import User
+
+@admin.register(User)
+class UserAdmin(BaseUserAdmin):
+    list_display = ('id', 'email', 'first_name', 'last_name', 'role', 'telegram_chat_id', 'is_staff')
+    list_filter = ('role', 'is_staff', 'is_active')
+    search_fields = ('email', 'first_name', 'last_name', 'phone_number')
+    ordering = ('id',)
+    
+    fieldsets = (
+        (None, {'fields': ('email', 'password')}),
+        ('Shaxsiy ma\'lumotlar', {'fields': ('first_name', 'last_name', 'phone_number', 'role')}),
+        ('Telegram', {'fields': ('telegram_chat_id', 'telegram_link_token')}),
+        ('Huquqlar', {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
+        ('Muhim sanalar', {'fields': ('last_login', 'date_joined')}),
+    )
+    add_fieldsets = (
+        (None, {
+            'classes': ('wide',),
+            'fields': ('email', 'password', 'role', 'first_name', 'last_name'),
+        }),
+    )
+```
+
+---
+
+#### 1.6. Migratsiya va Admin yaratish
+```bash
+python manage.py makemigrations users
+python manage.py migrate
+python manage.py createsuperuser
+python manage.py runserver
+```
+
+---
+
+## 2-BOSQICH (2-kun): Autentifikatsiya (JWT), Profil va Swagger
+
+### 🎯 Maqsad:
+Register, Login, Token Refresh, `GET/PATCH /auth/me/` endpointlarini va Swagger hujjatlarini ulash.
+
+---
+
+### 📋 Vazifalar va Real Kod Misollari:
+
+#### 2.1. SimpleJWT va DRF Sozlamalari (`config/settings.py`)
+```python
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 10,
+}
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(env('ACCESS_TOKEN_LIFETIME_MINUTES', default=60))),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=int(env('REFRESH_TOKEN_LIFETIME_DAYS', default=7))),
+    'ROTATE_REFRESH_TOKENS': False,
+    'BLACKLIST_AFTER_ROTATION': False,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Evently API',
+    'DESCRIPTION': 'Tadbirlarni boshqarish platformasi backend API hujjati',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+}
+```
+
+---
+
+#### 2.2. Auth Serializer'lari (`apps/users/serializers.py`)
+```python
+from rest_framework import serializers
+from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+
+User = get_user_model()
+
+class RegisterSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
+    password_confirm = serializers.CharField(write_only=True, required=True)
+
+    class Meta:
+        model = User
+        fields = ('id', 'email', 'password', 'password_confirm', 'first_name', 'last_name', 'phone_number', 'role')
+        read_only_fields = ('id', 'role')  # XAVFSIZLIK: Foydalanuvchi o'zini admin qilib yuborolmaydi!
+
+    def validate(self, attrs):
+        if attrs['password'] != attrs['password_confirm']:
+            raise serializers.ValidationError({"password": "Parollar bir xil emas."})
+        return attrs
+
+    def create(self, validated_data):
+        validated_data.pop('password_confirm')
+        user = User.objects.create_user(**validated_data)
+        return user
+
+
+class UserMeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ('id', 'email', 'first_name', 'last_name', 'phone_number', 'role', 'telegram_chat_id', 'date_joined')
+        read_only_fields = ('id', 'email', 'role', 'telegram_chat_id', 'date_joined')
+```
+
+---
+
+#### 2.3. Auth View'lari (`apps/users/views.py`)
+```python
+from rest_framework import generics, permissions
+from django.contrib.auth import get_user_model
+from .serializers import RegisterSerializer, UserMeSerializer
+
+User = get_user_model()
+
+class RegisterView(generics.CreateAPIView):
+    queryset = User.objects.all()
+    serializer_class = RegisterSerializer
+    permission_classes = [permissions.AllowAny]
+
+
+class UserMeView(generics.RetrieveUpdateAPIView):
+    serializer_class = UserMeSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self):
+        return self.request.user
+```
+
+---
+
+#### 2.4. URL'larni ulash (`apps/users/urls.py` va `config/urls.py`)
+```python
+# apps/users/urls.py
+from django.urls import path
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from .views import RegisterView, UserMeView
+
+urlpatterns = [
+    path('register/', RegisterView.as_view(), name='auth_register'),
+    path('login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('me/', UserMeView.as_view(), name='user_me'),
+]
+```
+
+`config/urls.py`:
+```python
+from django.contrib import admin
+from django.urls import path, include
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('api/v1/auth/', include('apps.users.urls')),
+    
+    # Swagger
+    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+    path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+]
+```
+
+---
+
+## 3-BOSQICH (3-kun): Event modeli, Admin CRUD va Permission'lar
+
+### 🎯 Maqsad:
+`Event` modelini yaratish, Custom Permission'lar (`IsAdmin`, `IsAdminOrReadOnly`) va tadbir yaratish/tahrirlash/o'chirish logikasi.
+
+---
+
+### 📋 Vazifalar va Real Kod Misollari:
+
+#### 3.1. Permissions (`apps/users/permissions.py`)
+```python
+from rest_framework import permissions
+
+class IsAdmin(permissions.BasePermission):
+    """Faqat role='admin' bo'lgan foydalanuvchilar uchun"""
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated and request.user.role == 'admin')
+
+
+class IsAdminOrReadOnly(permissions.BasePermission):
+    """GET/HEAD/OPTIONS hammaga, o'zgartirish faqat adminga"""
+    def has_permission(self, request, view):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return bool(request.user and request.user.is_authenticated and request.user.role == 'admin')
+```
+
+---
+
+#### 3.2. `Event` modeli (`apps/events/models.py`)
+```python
+from django.db import models
+from django.conf import settings
+
+class Event(models.Model):
+    class EventType(models.TextChoices):
+        SEMINAR = 'seminar', 'Seminar'
+        MASTERCLASS = 'masterclass', 'Masterclass'
+        TRAINING = 'training', 'Training'
+
+    class Status(models.TextChoices):
+        OPEN = 'open', 'Open'
+        CLOSED = 'closed', 'Closed'
+
+    title = models.CharField(max_length=200)
+    description = models.TextField()
+    event_type = models.CharField(max_length=20, choices=EventType.choices)
+    location = models.CharField(max_length=255)
+    start_at = models.DateTimeField()
+    end_at = models.DateTimeField()
+    capacity = models.PositiveIntegerField(null=True, blank=True, help_text="Null bo'lsa cheklanmagan")
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN)
+    
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='created_events')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-start_at']
+
+    def __str__(self):
+        return self.title
+```
+
+---
+
+#### 3.3. Event Serializer (`apps/events/serializers.py`)
+```python
+from rest_framework import serializers
+from django.utils import timezone
+from .models import Event
+
+class EventSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Event
+        fields = (
+            'id', 'title', 'description', 'event_type', 'location',
+            'start_at', 'end_at', 'capacity', 'status', 'created_by',
+            'created_at', 'updated_at'
+        )
+        read_only_fields = ('id', 'status', 'created_by', 'created_at', 'updated_at')
+
+    def validate(self, attrs):
+        start_at = attrs.get('start_at', getattr(self.instance, 'start_at', None))
+        end_at = attrs.get('end_at', getattr(self.instance, 'end_at', None))
+
+        # BR-7: end_at har doim start_at dan keyin bo'lishi kerak
+        if start_at and end_at and end_at <= start_at:
+            raise serializers.ValidationError({"end_at": "Tugash vaqti boshlanish vaqtidan keyin bo'lishi kerak."})
+
+        # BR-8: Yangi yaratilayotganda o'tgan sanaga tadbir yaratib bo'lmaydi
+        if not self.instance and start_at and start_at <= timezone.now():
+            raise serializers.ValidationError({"start_at": "Tadbir boshlanish vaqti kelajakda bo'lishi kerak."})
+
+        return attrs
+```
+
+---
+
+#### 3.4. Event Views (`apps/events/views.py`)
+```python
+from rest_framework import viewsets
+from .models import Event
+from .serializers import EventSerializer
+from apps.users.permissions import IsAdminOrReadOnly
+
+class EventViewSet(viewsets.ModelViewSet):
+    queryset = Event.objects.all()
+    serializer_class = EventSerializer
+    permission_classes = [IsAdminOrReadOnly]
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+```
+
+---
+
+## 4-BOSQICH (4-kun): Tadbirlar ro'yxati (N+1 muammosiz), Qidiruv va Filter
+
+### 🎯 Maqsad:
+`registered_count`, `available_seats`, `is_finished`, `is_registered` maydonlarini optimal SQL so'rov orqali hisoblash va filterlarni qo'shish.
+
+---
+
+### 📋 Vazifalar va Real Kod Misollari:
+
+#### 4.1. Annotate bilan Queryset optimallashtirish (`apps/events/views.py`)
+```python
+from django.db.models import Count, Q, Case, When, F, Value, IntegerField
+from django.utils import timezone
+from .models import Event
+
+def get_optimized_event_queryset():
+    """Tadbirlar ro'yxati uchun N+1 so'rovlarsiz annotate qilingan queryset"""
+    return Event.objects.annotate(
+        registered_count=Count('registrations', filter=Q(registrations__status='active'))
+    ).annotate(
+        available_seats=Case(
+            When(capacity__isnull=True, then=Value(None)),
+            default=F('capacity') - F('registered_count'),
+            output_field=IntegerField()
+        )
+    )
+```
+
+---
+
+#### 4.2. Filtrlash (`apps/events/filters.py`)
+```python
+import django_filters
+from django.utils import timezone
+from .models import Event
+
+class EventFilter(django_filters.FilterSet):
+    upcoming = django_filters.BooleanFilter(method='filter_upcoming')
+    search = django_filters.CharFilter(method='filter_search')
+
+    class Meta:
+        model = Event
+        fields = ['event_type', 'status', 'upcoming', 'search']
+
+    def filter_upcoming(self, queryset, name, value):
+        if value:
+            return queryset.filter(start_at__gt=timezone.now())
+        return queryset
+
+    def filter_search(self, queryset, name, value):
+        return queryset.filter(
+            django_filters.rest_framework.Q(title__icontains=value) |
+            django_filters.rest_framework.Q(description__icontains=value)
+        )
+```
+
+---
+
+## 5-BOSQICH (5-kun): Registration modeli va Tadbirga yozilish (Race Condition oldini olish)
+
+### 🎯 Maqsad:
+`Registration` modelini yaratish va `POST /api/v1/events/{id}/register/` da `select_for_update()` yordamida race condition xavfini bartaraf etish.
+
+---
+
+### 📋 Vazifalar va Real Kod Misollari:
+
+#### 5.1. `Registration` modeli (`apps/events/models.py`)
+```python
+class Registration(models.Model):
+    class Status(models.TextChoices):
+        ACTIVE = 'active', 'Active'
+        CANCELLED = 'cancelled', 'Cancelled'
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='registrations')
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='registrations')
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.ACTIVE)
+    reminder_sent = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            # BR-1: Bir foydalanuvchi bir tadbirga faqat bir marta yoziladi
+            models.UniqueConstraint(fields=['user', 'event'], name='unique_user_event_registration')
+        ]
+```
+
+---
+
+#### 5.2. Biznes Mantiq (`apps/events/services.py`)
+> 💡 **Diqqat:** Biznes qoidalar (BR-1, BR-2, BR-3, BR-5) va `select_for_update()` qulfi aynan shu yerda yoziladi!
+
+```python
+from django.db import transaction
+from django.utils import timezone
+from rest_framework.exceptions import ValidationError
+from .models import Event, Registration
+
+def register_user_to_event(user, event_id):
+    with transaction.atomic():
+        # Race condition oldini olish uchun qatordan qulf (lock) olamiz
+        try:
+            event = Event.objects.select_for_update().get(pk=event_id)
+        except Event.DoesNotExist:
+            raise ValidationError({"detail": "Tadbir topilmadi.", "code": "not_found"})
+
+        # BR-5: Yopilgan tadbirga yozilish mumkin emas
+        if event.status == Event.Status.CLOSED:
+            raise ValidationError({"detail": "Tadbir yopilgan.", "code": "event_closed"})
+
+        # BR-3: Boshlanib ketgan tadbirga yozilish mumkin emas
+        if event.start_at <= timezone.now():
+            raise ValidationError({"detail": "Tadbir allaqachon boshlangan.", "code": "event_started"})
+
+        # Foydalanuvchining avvalgi ro'yxatdan o'tishini tekshiramiz
+        reg = Registration.objects.filter(user=user, event=event).first()
+        if reg and reg.status == Registration.Status.ACTIVE:
+            raise ValidationError({"detail": "Siz bu tadbirga allaqachon yozilgansiz.", "code": "already_registered"})
+
+        # BR-2: Joylar soni cheklangan bo'lsa tekshiramiz
+        if event.capacity is not None:
+            active_count = Registration.objects.filter(event=event, status=Registration.Status.ACTIVE).count()
+            if active_count >= event.capacity:
+                raise ValidationError({"detail": "Bo‘sh joy qolmagan.", "code": "event_full"})
+
+        # Agar avval bekor qilingan bo'lsa, uni qayta faollashtiramiz
+        if reg:
+            reg.status = Registration.Status.ACTIVE
+            reg.cancelled_at = None
+            reg.save()
+            return reg
+        else:
+            return Registration.objects.create(user=user, event=event, status=Registration.Status.ACTIVE)
+```
+
+---
+
+## 6-BOSQICH (6-kun): Tadbirdan chiqish, Mening tadbirlarim va Admin yopish
+
+### 🎯 Maqsad:
+Ro'yxatdan chiqish (BR-6), o'z yozilishlarini ko'rish (BR-10), admin tadbirni yopishi va qatnashuvchilar ro'yxati.
+
+---
+
+### 📋 Vazifalar va Real Kod Misollari:
+
+#### 6.1. Chiqish servisi (`apps/events/services.py`)
+```python
+def unregister_user_from_event(user, event_id):
+    with transaction.atomic():
+        try:
+            event = Event.objects.get(pk=event_id)
+        except Event.DoesNotExist:
+            raise ValidationError({"detail": "Tadbir topilmadi.", "code": "not_found"})
+
+        # BR-6: Tadbir boshlangandan keyin chiqib bo'lmaydi
+        if event.start_at <= timezone.now():
+            raise ValidationError({"detail": "Tadbir boshlangan, undan chiqib bo'lmaydi.", "code": "event_started"})
+
+        reg = Registration.objects.filter(user=user, event=event, status=Registration.Status.ACTIVE).first()
+        if not reg:
+            raise ValidationError({"detail": "Siz bu tadbirga yozilmagansiz.", "code": "not_registered"})
+
+        reg.status = Registration.Status.CANCELLED
+        reg.cancelled_at = timezone.now()
+        reg.save()
+        return reg
+```
+
+---
+
+#### 6.2. Action Endpointlari (`apps/events/views.py`)
+```python
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework import status, permissions
+from .services import register_user_to_event, unregister_user_from_event
+from apps.users.permissions import IsAdmin
+
+class EventViewSet(viewsets.ModelViewSet):
+    # ... avvalgi kodlar ...
+
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def register(self, request, pk=None):
+        reg = register_user_to_event(request.user, pk)
+        return Response({"id": reg.id, "status": reg.status, "created_at": reg.created_at}, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def unregister(self, request, pk=None):
+        reg = unregister_user_from_event(request.user, pk)
+        return Response({"detail": "Tadbirdan muvaffaqiyatli chiqdingiz.", "status": reg.status}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAdmin])
+    def close(self, request, pk=None):
+        event = self.get_object()
+        event.status = Event.Status.CLOSED
+        event.save()
+        return Response({"detail": "Tadbir muvaffaqiyatli yopildi.", "status": event.status})
+
+    @action(detail=True, methods=['get'], permission_classes=[IsAdmin])
+    def participants(self, request, pk=None):
+        event = self.get_object()
+        active_regs = event.registrations.filter(status=Registration.Status.ACTIVE).select_related('user')
+        data = [{
+            "registration_id": r.id,
+            "user_id": r.user.id,
+            "full_name": f"{r.user.first_name} {r.user.last_name}".strip(),
+            "email": r.user.email,
+            "phone_number": r.user.phone_number,
+            "registered_at": r.created_at
+        } for r in active_regs]
+        return Response({"count": len(data), "results": data})
+```
+
+---
+
+## 7-BOSQICH (7-kun): Telegram Bot va Hisobni bog'lash (aiogram 3)
+
+### 🎯 Maqsad:
+Foydalanuvchi profilini Telegram boti bilan bog'lash (`/start TOKEN`), va yozilganda xabarnoma yuborish.
+
+---
+
+### 📋 Vazifalar va Real Kod Misollari:
+
+#### 7.1. Telegram xabarnoma yuborish servisi (`apps/notifications/services.py`)
+```python
+import httpx
+import logging
+from django.conf import settings
+from django.db import transaction
+
+logger = logging.getLogger(__name__)
+
+def send_telegram_message(chat_id: int, text: str):
+    token = settings.TELEGRAM_BOT_TOKEN
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    try:
+        response = httpx.post(url, json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"}, timeout=5.0)
+        return response.is_success
+    except Exception as e:
+        logger.error(f"Telegram yuborishda xatolik: {e}")
+        return False
+
+def notify_registration_success(registration):
+    """Tranzaksiyadan so'ng xabar yuborish"""
+    def _send():
+        user = registration.user
+        event = registration.event
+        if user.telegram_chat_id:
+            msg = (
+                f"✅ <b>Siz tadbirga muvaffaqiyatli yozildingiz!</b>\n\n"
+                f"📌 <b>{event.title}</b>\n"
+                f"🗓 {event.start_at.strftime('%Y-%m-%d %H:%M')}\n"
+                f"📍 {event.location}"
+            )
+            send_telegram_message(user.telegram_chat_id, msg)
+            
+    transaction.on_commit(_send)
+```
+
+---
+
+#### 7.2. Bot `/start` Handler (`bot/handlers.py`)
+```python
+from aiogram import Router, types
+from aiogram.filters import CommandStart, CommandObject
+import httpx
+import os
+
+router = Router()
+BACKEND_URL = os.getenv("BACKEND_API_URL", "http://localhost:8000/api/v1")
+BOT_SECRET = os.getenv("BOT_API_SECRET", "my-very-secure-secret-token-123")
+
+@router.message(CommandStart())
+async def cmd_start(message: types.Message, command: CommandObject):
+    token = command.args
+    if not token:
+        await message.answer("Assalomu alaykum! Hisobingizni bog'lash uchun saytdan havola orqali kiring.")
+        return
+
+    async with httpx.AsyncClient() as client:
+        res = await client.post(
+            f"{BACKEND_URL}/telegram/confirm/",
+            headers={"X-Bot-Secret": BOT_SECRET},
+            json={"token": token, "chat_id": message.chat.id}
+        )
+        if res.status_code == 200:
+            await message.answer("✅ Hisobingiz muvaffaqiyatli bog'landi! Endi sizga tadbirlar bo'yicha eslatmalar keladi.")
+        else:
+            await message.answer("❌ Havola eskirgan yoki xato.")
+```
+
+---
+
+## 8-BOSQICH (8-kun): Eslatmalar mexanizmi (Management Command)
+
+### 🎯 Maqsad:
+`python manage.py send_event_reminders` komandasi orqali boshlanishiga 24 soat qolgan tadbirlar qatnashuvchilariga eslatma jo'natish.
+
+---
+
+### 📋 Vazifalar va Real Kod Misollari:
+
+#### 8.1. `send_event_reminders.py` (`apps/events/management/commands/send_event_reminders.py`)
+```python
+from django.core.management.base import BaseCommand
+from django.utils import timezone
+from datetime import timedelta
+from apps.events.models import Registration, Event
+from apps.notifications.services import send_telegram_message
+
+class Command(BaseCommand):
+    help = "Tadbirga 24 soat qolganda qatnashuvchilarga eslatma yuborish"
+
+    def handle(self, *args, **options):
+        now = timezone.now()
+        reminder_limit = now + timedelta(hours=24)
+
+        regs = Registration.objects.filter(
+            status=Registration.Status.ACTIVE,
+            reminder_sent=False,
+            event__status=Event.Status.OPEN,
+            event__start_at__gt=now,
+            event__start_at__lte=reminder_limit,
+            user__telegram_chat_id__isnull=False
+        ).select_related('user', 'event')
+
+        count = 0
+        for reg in regs:
+            text = (
+                f"⏰ <b>Eslatma!</b>\n\n"
+                f"Siz yozilgan tadbir yaqinlashmoqda:\n"
+                f"📌 <b>{reg.event.title}</b>\n"
+                f"🗓 {reg.event.start_at.strftime('%Y-%m-%d %H:%M')}\n"
+                f"📍 {reg.event.location}\n\n"
+                f"Kechikmang!"
+            )
+            success = send_telegram_message(reg.user.telegram_chat_id, text)
+            if success:
+                reg.reminder_sent = True
+                reg.save(update_fields=['reminder_sent'])
+                count += 1
+
+        self.stdout.write(self.style.SUCCESS(f"{count} ta eslatma muvaffaqiyatli yuborildi."))
+```
+
+---
+
+## 9-BOSQICH (9-kun): Avtomatik Testlar (Testing)
+
+### 🎯 Maqsad:
+Biznes qoidalar va xavfsizlik talablarini Django `TestCase` orqali tekshirish.
+
+---
+
+### 📋 Vazifalar va Real Kod Misollari:
+
+#### 9.1. Tadbirga yozilish testi (`apps/events/tests/test_registration.py`)
+```python
+from django.test import TestCase
+from django.utils import timezone
+from datetime import timedelta
+from apps.users.models import User
+from apps.events.models import Event, Registration
+from apps.events.services import register_user_to_event
+from rest_framework.exceptions import ValidationError
+
+class RegistrationTestCase(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(email="test@user.com", password="password123")
+        self.event = Event.objects.create(
+            title="Python Masterclass",
+            description="Dars",
+            event_type="masterclass",
+            location="Toshkent",
+            start_at=timezone.now() + timedelta(days=2),
+            end_at=timezone.now() + timedelta(days=2, hours=2),
+            capacity=1
+        )
+
+    def test_successful_registration(self):
+        reg = register_user_to_event(self.user, self.event.id)
+        self.assertEqual(reg.status, Registration.Status.ACTIVE)
+
+    def test_duplicate_registration_fails(self):
+        register_user_to_event(self.user, self.event.id)
+        # BR-1: Takroriy yozilish xato berishi shart
+        with self.assertRaises(ValidationError):
+            register_user_to_event(self.user, self.event.id)
+
+    def test_capacity_full_fails(self):
+        register_user_to_event(self.user, self.event.id)
+        user2 = User.objects.create_user(email="user2@test.com", password="password123")
+        # BR-2: Joy qolmaganda xato berishi shart
+        with self.assertRaises(ValidationError):
+            register_user_to_event(user2, self.event.id)
+```
+
+---
+
+## 10-BOSQICH (10-kun): Deployment va Yakuniy Himoya
+
+### 🎯 Maqsad:
+Loyihani Render/Railway'ga chiqarish va himoyaga tayyorgarlik.
+
+### 📋 Ko'rsatmalar:
+1. `Procfile` yaratish:
+   ```
+   web: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT
+   bot: python -m bot.main
+   ```
+2. `runtime.txt` yaratish (`python-3.11.8`).
+3. Muhit o'zgaruvchilarini (`.env`) server dashboardiga kiritish (`DEBUG=False`).
+4. Demo ssenariysini bir necha bor mustaqil Swagger orqali mashq qilish.
+
+---
+
+## 🚀 Qanday harakat qilamiz?
+Endi sizda har bir qadam uchun **to'liq kod namunalari va tushuntirishlar** mavjud!  
+Keling, hoziroq **1-BOSQICH (1-kun)** bo'yicha:
+1. `requirements.txt` ni yaratish;
+2. Kutubxonalarni o'rnatish;
+3. `config` loyihasi va `apps/users` app'ini sozlashni boshlaylik.
+
+Siz qaysi amaldan boshlayapsiz? Biror joyida yordam kerak bo'lsa darhol ayting!

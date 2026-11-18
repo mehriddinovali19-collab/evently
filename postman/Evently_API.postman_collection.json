@@ -1,0 +1,651 @@
+{
+  "info": {
+    "_postman_id": "7a35c249-1d4e-4f3b-81d2-0fbc3585e821",
+    "name": "Evently API",
+    "description": "Evently tadbirlarni boshqarish platformasi uchun to'liq REST API kolleksiyasi. README.md dagi barcha endpointlar, validation namunalari va test skriptlari bilan.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "01. Authentication",
+      "description": "Foydalanuvchini ro'yxatdan o'tkazish, tizimga kirish (JWT), tokenni yangilash va profil boshqaruvi.",
+      "item": [
+        {
+          "name": "Register User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"StrongPass123!\",\n  \"password_confirm\": \"StrongPass123!\",\n  \"first_name\": \"Aziz\",\n  \"last_name\": \"Karimov\",\n  \"phone_number\": \"+998901234567\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/register/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "register", ""]
+            },
+            "description": "Yangi foydalanuvchini ro'yxatdan o'tkazish. Muvaffaqiyatli bo'lsa 201 Created qaytadi."
+          },
+          "response": []
+        },
+        {
+          "name": "Login (User)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.access) {",
+                  "        pm.environment.set(\"accessToken\", jsonData.access);",
+                  "    }",
+                  "    if (jsonData.refresh) {",
+                  "        pm.environment.set(\"refreshToken\", jsonData.refresh);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"StrongPass123!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login", ""]
+            },
+            "description": "Oddiy foydalanuvchi sifatida tizimga kirish. Access va Refresh tokenlarni avtomatik `{{accessToken}}` ga saqlaydi."
+          },
+          "response": []
+        },
+        {
+          "name": "Login (Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.access) {",
+                  "        pm.environment.set(\"adminAccessToken\", jsonData.access);",
+                  "    }",
+                  "    if (jsonData.refresh) {",
+                  "        pm.environment.set(\"adminRefreshToken\", jsonData.refresh);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"AdminPass123!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login", ""]
+            },
+            "description": "Admin foydalanuvchi sifatida tizimga kirish. Access tokenni `{{adminAccessToken}}` ga saqlaydi."
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.access) {",
+                  "        pm.environment.set(\"accessToken\", jsonData.access);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/token/refresh/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "token", "refresh", ""]
+            },
+            "description": "Refresh token orqali yangi access token olish."
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Profile",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/me/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "me", ""]
+            },
+            "description": "Tizimga kirgan joriy foydalanuvchining o'z profilini ko'rish."
+          },
+          "response": []
+        },
+        {
+          "name": "Update My Profile",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Azizbek\",\n  \"phone_number\": \"+998909998877\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/me/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "me", ""]
+            },
+            "description": "O'z profil ma'lumotlarini qisman tahrirlash (rolni o'zgartirib bo'lmaydi)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02. Events",
+      "description": "Tadbirlarni ko'rish, qidirish, admin tomonidan CRUD va yopish amallari.",
+      "item": [
+        {
+          "name": "List Events (All / Filtered)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/?page=1&event_type=masterclass&status=open&upcoming=true&search=django&ordering=start_at",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", ""],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Sahifa raqami (sahifada 10 ta)"
+                },
+                {
+                  "key": "event_type",
+                  "value": "masterclass",
+                  "description": "Tadbir turi bo'yicha filter (seminar, masterclass, workshop)"
+                },
+                {
+                  "key": "status",
+                  "value": "open",
+                  "description": "Holat bo'yicha filter (open, full, cancelled, completed)"
+                },
+                {
+                  "key": "upcoming",
+                  "value": "true",
+                  "description": "Faqat kelgusi (boshlanmagan) tadbirlar"
+                },
+                {
+                  "key": "search",
+                  "value": "django",
+                  "description": "Sarlavha (title) va tavsif (description) bo'yicha qidiruv"
+                },
+                {
+                  "key": "ordering",
+                  "value": "start_at",
+                  "description": "Tartiblash: start_at, -start_at, created_at"
+                }
+              ]
+            },
+            "description": "Tadbirlar ro'yxatini olish. Pagination, qidiruv va filtrlash parametrlari kiritilgan."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Event Detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/{{eventId}}/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", "{{eventId}}", ""]
+            },
+            "description": "Bitta tadbir haqida to'liq batafsil ma'lumot olish."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Event (Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.id) {",
+                  "        pm.environment.set(\"eventId\", jsonData.id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Django REST Framework asoslari\",\n  \"description\": \"API yaratish bo‘yicha amaliy master-klass. Noutbuk olib keling.\",\n  \"event_type\": \"masterclass\",\n  \"location\": \"IT Park, 3-qavat, 301-xona\",\n  \"start_at\": \"2026-12-05T14:00:00+05:00\",\n  \"end_at\": \"2026-12-05T17:00:00+05:00\",\n  \"capacity\": 30\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", ""]
+            },
+            "description": "Faqat Admin roliga ega foydalanuvchilar yangi tadbir yarata oladi. Yaratilgan tadbir ID'si avtomatik `{{eventId}}` ga o'rnatiladi."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Event (Admin)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"capacity\": 35,\n  \"location\": \"IT Park, 4-qavat, Katta majlislar zali\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/{{eventId}}/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", "{{eventId}}", ""]
+            },
+            "description": "Admin tomonidan tadbir ma'lumotlarini qisman tahrirlash."
+          },
+          "response": []
+        },
+        {
+          "name": "Close Event (Admin)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/{{eventId}}/close/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", "{{eventId}}", "close", ""]
+            },
+            "description": "Admin tadbirni muddatidan oldin yopishi. Yopilgan tadbirlarga qatnashuvchilar yozila olmaydi."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Event (Admin)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/{{eventId}}/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", "{{eventId}}", ""]
+            },
+            "description": "Admin tomonidan tadbirni butunlay o'chirish."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Event Participants (Admin)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/{{eventId}}/participants/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", "{{eventId}}", "participants", ""]
+            },
+            "description": "Faqat Admin ko'ra oladi: Tadbirga yozilgan barcha faol qatnashuvchilar ro'yxati."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03. Registrations",
+      "description": "Tadbirga yozilish, tadbirdan chiqish va foydalanuvchining shaxsiy arizalari.",
+      "item": [
+        {
+          "name": "Register for Event",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.id) {",
+                  "        pm.environment.set(\"registrationId\", jsonData.id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/{{eventId}}/register/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", "{{eventId}}", "register", ""]
+            },
+            "description": "Tizimga kirgan foydalanuvchi tadbirga ro'yxatdan o'tadi. Joy qolmagan bo'lsa yoki allaqachon yozilgan bo'lsa 400 Bad Request qaytadi."
+          },
+          "response": []
+        },
+        {
+          "name": "Unregister from Event",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/events/{{eventId}}/unregister/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "events", "{{eventId}}", "unregister", ""]
+            },
+            "description": "Foydalanuvchi o'zi yozilgan tadbirdan chiqadi. Joy qayta bo'shaydi."
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Registrations",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/registrations/?status=active",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "registrations", ""],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "active",
+                  "description": "Status bo'yicha filter: active yoki cancelled"
+                }
+              ]
+            },
+            "description": "Tizimga kirgan foydalanuvchi o'zi ro'yxatdan o'tgan tadbirlar tarixini ko'rishi."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04. Telegram Integration",
+      "description": "Saytdagi akkauntni Telegram bot bilan bog'lash oqimi.",
+      "item": [
+        {
+          "name": "1. Get Telegram Link Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.link) {",
+                  "        var match = jsonData.link.match(/start=([^&]+)/);",
+                  "        if (match && match[1]) {",
+                  "            pm.environment.set(\"telegramLinkToken\", match[1]);",
+                  "        }",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/telegram/link/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "telegram", "link", ""]
+            },
+            "description": "Foydalanuvchi saytda Telegramni ulash tugmasini bosganda bir martalik havola generatsiya qilinadi. Havoladagi token avtomatik `{{telegramLinkToken}}` ga olinadi."
+          },
+          "response": []
+        },
+        {
+          "name": "2. Confirm Telegram Linking (Bot API)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Bot-Secret",
+                "value": "{{botApiSecret}}",
+                "description": "Faqat Telegram bot bilishi kerak bo'lgan maxfiy ichki kalit"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{telegramLinkToken}}\",\n  \"chat_id\": 123456789\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/telegram/confirm/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "telegram", "confirm", ""]
+            },
+            "description": "Telegram bot foydalanuvchining `/start <token>` buyrug'ini qabul qilgandan so'ng backendga yuboradigan so'rovi."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "05. Documentation & Schema",
+      "description": "OpenAPI sxemasi va Swagger UI hujjatlari.",
+      "item": [
+        {
+          "name": "Get OpenAPI Schema",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/schema/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "schema", ""]
+            },
+            "description": "drf-spectacular orqali generatsiya qilingan OpenAPI JSON/YAML sxemasi."
+          },
+          "response": []
+        },
+        {
+          "name": "Swagger UI Page",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/docs/",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "docs", ""]
+            },
+            "description": "Swagger interfeysining HTML sahifasi."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

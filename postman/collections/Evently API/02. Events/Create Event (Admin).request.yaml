@@ -1,0 +1,33 @@
+$kind: http-request
+description: Faqat Admin roliga ega foydalanuvchilar yangi tadbir yarata oladi. Yaratilgan tadbir ID'si avtomatik `{{eventId}}` ga o'rnatiladi.
+url: "{{baseUrl}}/api/v1/events/"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "title": "Django REST Framework asoslari",
+      "description": "API yaratish bo‘yicha amaliy master-klass. Noutbuk olib keling.",
+      "event_type": "masterclass",
+      "location": "IT Park, 3-qavat, 301-xona",
+      "start_at": "2026-12-05T14:00:00+05:00",
+      "end_at": "2026-12-05T17:00:00+05:00",
+      "capacity": 30
+    }
+auth:
+  type: bearer
+  credentials:
+    token: "{{adminAccessToken}}"
+scripts:
+  - type: afterResponse
+    code: |-
+      if (pm.response.code === 201) {
+          var jsonData = pm.response.json();
+          if (jsonData.id) {
+              pm.environment.set("eventId", jsonData.id);
+          }
+      }
+    language: text/javascript
+order: 3000
