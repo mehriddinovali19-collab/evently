@@ -128,7 +128,7 @@
     ```
   - 💡 **Nega kerak (Izoh):** Django REST Framework barcha kelayotgan so'rovlarni avtomatik ravishda JWT token orqali tekshirishini va tokenlarning qancha vaqt yashashini belgilash uchun.
 
-- [ ] **Foydalanuvchi ro'yxatdan o'tishi (Register Serializer):**
+- [X] **Foydalanuvchi ro'yxatdan o'tishi (Register Serializer):**
   - 📁 **Qaysi faylga:** `apps/users/serializers.py`
   - 📝 **Nima yoziladi:** `UserRegisterSerializer` klassi:
     - Maydonlar: `email`, `first_name`, `last_name`, `phone_number`, `password`, `password_confirm`.
@@ -167,7 +167,7 @@
   - 📁 **Qaysi fayllarga:** `config/settings.py` va `config/urls.py`
   - 📝 **Nima yoziladi:**
     - `INSTALLED_APPS` ga `'drf_spectacular'` qo'shish.
-    - `config/urls.py` ga `SpectacularAPIView`, `SpectacularSwaggerView.as_view(url_name='schema')` va `SpectacularRedocView.as_view(url_name='schema')` ni ulash.
+    - `config/urls.py` ga `SpectacularAPIView`, `SpectacularSwaggerView.as_view(url_name='schema')` va `SpectacularRedocView.as_view(url_name='schemas')` ni ulash.
     - `config/urls.py` ga `path('api/v1/auth/', include('apps.users.urls'))` ni ulash.
   - 💡 **Nega kerak (Izoh):** Brauzer orqali `/api/docs/` manziliga kirib, yaratilgan barcha API'larni qulay interfeysda ko'rish, "Authorize" tugmasi orqali token kiritib, API'larni test qilish uchun.
 
