@@ -504,61 +504,177 @@ class EventViewSet(viewsets.ModelViewSet):
 
 ---
 
-## 4-BOSQICH (4-kun): Tadbirlar ro'yxati (N+1 muammosiz), Qidiruv va Filter
+## 4-BOSQICH (4-kun): Qidiruv, Filtrlash, Pagination va Query Optimizatsiyasi (N+1 Muammosi)
+
+> **Mentor eslatmasi:**  
+> "Bazada 10 000 ta tadbir bo'lsa, ularni birdaniga olib kelish serverni o'ldiradi. Shuning uchun sahifalash (Pagination) kerak. Shuningdek, har bir tadbir bilan uning tashkilotchisini tortib olishda N+1 ta so'rov ketmasligi uchun `select_related` ishlatamiz."
 
 ### 🎯 Maqsad:
-`registered_count`, `available_seats`, `is_finished`, `is_registered` maydonlarini optimal SQL so'rov orqali hisoblash va filterlarni qo'shish.
+`registered_count`, `available_seats` maydonlarini optimal SQL so'rov orqali hisoblash, N+1 muammosini yo'qotish, qidiruv, tartiblash, sana oralig'i bo'yicha filtrlash va pagination tizimini to'liq joriy etish.
 
 ---
 
 ### 📋 Vazifalar va Real Kod Misollari:
 
-#### 4.1. Annotate bilan Queryset optimallashtirish (`apps/events/views.py`)
+#### 4.1. Sahifalash (Pagination) sozlamasi (`apps/common/pagination.py` va `config/settings.py`)
+- 📁 **Qaysi faylga:** `apps/common/pagination.py`
 ```python
-from django.db.models import Count, Q, Case, When, F, Value, IntegerField
-from django.utils import timezone
-from .models import Event
+# apps/common/pagination.py
+from rest_framework.pagination import PageNumberPagination
 
-def get_optimized_event_queryset():
-    """Tadbirlar ro'yxati uchun N+1 so'rovlarsiz annotate qilingan queryset"""
-    return Event.objects.annotate(
-        registered_count=Count('registrations', filter=Q(registrations__status='active'))
-    ).annotate(
-        available_seats=Case(
-            When(capacity__isnull=True, then=Value(None)),
-            default=F('capacity') - F('registered_count'),
-            output_field=IntegerField()
-        )
-    )
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
 ```
+
+- 📁 **Qaysi faylga:** `config/settings.py`
+```python
+# config/settings.py
+REST_FRAMEWORK = {
+    # ...
+    'DEFAULT_PAGINATION_CLASS': 'apps.common.pagination.StandardResultsSetPagination',
+    'PAGE_SIZE': 10,
+}
+```
+> 💡 **Izoh:** Har bir so'rovda server default 10 ta tadbir qaytaradi, foydalanuvchi `?page=2` yoki `?page_size=20` orqali boshqarishi mumkin.
 
 ---
 
-#### 4.2. Filtrlash (`apps/events/filters.py`)
+#### 4.2. Filter klassini yaratish (`apps/events/filters.py`)
+- 📁 **Qaysi faylga:** `apps/events/filters.py`
 ```python
+# apps/events/filters.py
 import django_filters
 from django.utils import timezone
 from .models import Event
 
 class EventFilter(django_filters.FilterSet):
+    date_from = django_filters.DateTimeFilter(field_name='start_at', lookup_expr='gte')
+    date_to = django_filters.DateTimeFilter(field_name='start_at', lookup_expr='lte')
+    status = django_filters.ChoiceFilter(choices=Event.Status.choices)
+    event_type = django_filters.ChoiceFilter(choices=Event.EventType.choices)
     upcoming = django_filters.BooleanFilter(method='filter_upcoming')
-    search = django_filters.CharFilter(method='filter_search')
 
     class Meta:
         model = Event
-        fields = ['event_type', 'status', 'upcoming', 'search']
+        fields = ['status', 'event_type', 'date_from', 'date_to', 'upcoming']
 
     def filter_upcoming(self, queryset, name, value):
         if value:
             return queryset.filter(start_at__gt=timezone.now())
         return queryset
-
-    def filter_search(self, queryset, name, value):
-        return queryset.filter(
-            django_filters.rest_framework.Q(title__icontains=value) |
-            django_filters.rest_framework.Q(description__icontains=value)
-        )
 ```
+> 💡 **Izoh:** Foydalanuvchilar `/api/v1/events/?status=open&date_from=2026-12-01T00:00:00Z&event_type=seminar` ko'rinishida parametrlarga ko'ra tadbirlarni saralay oladi.
+
+---
+
+#### 4.3. Serializer'da bo'sh joylar va hisoblangan maydonlarni chiqarish (`apps/events/serializers.py`)
+- 📁 **Qaysi faylga:** `apps/events/serializers.py`
+```python
+# apps/events/serializers.py
+from rest_framework import serializers
+from django.utils import timezone
+from .models import Event
+
+class EventSerializer(serializers.ModelSerializer):
+    registered_count = serializers.IntegerField(read_only=True)
+    available_seats = serializers.SerializerMethodField(read_only=True)
+    organizer_email = serializers.EmailField(source='created_by.email', read_only=True)
+
+    class Meta:
+        model = Event
+        fields = [
+            'id', 'title', 'description', 'event_type', 'location',
+            'start_at', 'end_at', 'capacity', 'status',
+            'registered_count', 'available_seats', 'organizer_email',
+            'created_at', 'updated_at', 'created_by'
+        ]
+        read_only_fields = [
+            'id', 'status', 'created_by', 'created_at', 'updated_at',
+            'registered_count', 'available_seats', 'organizer_email'
+        ]
+
+    def get_available_seats(self, obj):
+        if obj.capacity is None:
+            return None  # Cheklanmagan o'rinlar
+        count = getattr(obj, 'registered_count', 0)
+        return max(0, obj.capacity - count)
+
+    def validate(self, attrs):
+        start_at = attrs.get('start_at', getattr(self.instance, 'start_at', None))
+        end_at = attrs.get('end_at', getattr(self.instance, 'end_at', None))
+
+        if start_at and end_at and end_at <= start_at:
+            raise serializers.ValidationError({"end_at": "Tugash vaqti boshlanish vaqtidan keyin bo'lishi kerak."})
+
+        if not self.instance and start_at and start_at <= timezone.now():
+            raise serializers.ValidationError({"start_at": "Tadbir boshlanish vaqti kelajakda bo'lishi kerak."})
+
+        return attrs
+
+    def validate_capacity(self, value):
+        if value is not None and value <= 0:
+            raise serializers.ValidationError("Capacity 0 dan katta bo'lish shart!")
+        return value
+```
+
+---
+
+#### 4.4. ViewSet: Query Optimizatsiyasi (N+1 ni yo'qotish), Filter, Qidiruv va Tartiblash (`apps/events/views.py`)
+- 📁 **Qaysi faylga:** `apps/events/views.py`
+```python
+# apps/events/views.py
+from rest_framework import viewsets, filters
+from django_filters.rest_framework import DjangoFilterBackend
+from django.db.models import Count, Q
+from .models import Event
+from .serializers import EventSerializer
+from .filters import EventFilter
+from .permissions import IsAdminOrReadonly
+
+class EventViewSet(viewsets.ModelViewSet):
+    serializer_class = EventSerializer
+    permission_classes = [IsAdminOrReadonly]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_class = EventFilter
+    search_fields = ['title', 'description', 'location']
+    ordering_fields = ['start_at', 'created_at', 'title']
+    ordering = ['-start_at']
+
+    def get_queryset(self):
+        """
+        N+1 muammosini yo'qotish uchun:
+        - select_related('created_by'): muallif ma'lumotlarini bitta JOIN bilan tortadi
+        - annotate(registered_count=...): tasdiqlangan ro'yxatdan o'tganlar sonini SQL COUNT orqali hisoblaydi
+        """
+        return Event.objects.select_related('created_by').annotate(
+            registered_count=Count(
+                'registrations',
+                filter=Q(registrations__status='confirmed') | Q(registrations__status='active'),
+                distinct=True
+            )
+        )
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+```
+> 💡 **Izoh:**
+> - `select_related('created_by')`: Tashkilotchi ma'lumotlari bitta SQL JOIN orqali olinadi (100 ta alohida SQL so'rov ketmaydi).
+> - `annotate(...)`: Ro'yxatdan o'tganlar soni DB darajasida hisoblanadi.
+> - `filters.SearchFilter`: `?search=python` orqali sarlavha, tavsif va manzildan qidiradi.
+> - `filters.OrderingFilter`: `?ordering=start_at` yoki `?ordering=-created_at` orqali tartiblaydi.
+
+---
+
+#### 4.5. Tekshirish va Sinov (Verification)
+1. Ro'yxatni pagination bilan olish:
+   `GET /api/v1/events/?page=1&page_size=10`
+2. Qidiruv va sana oralig'i:
+   `GET /api/v1/events/?search=python&date_from=2026-11-20T00:00:00Z`
+3. Status va tartiblash:
+   `GET /api/v1/events/?status=open&ordering=start_at`
+4. SQL so'rovlar sonini tekshirish: N+1 so'rovlar yo'qligini, tashkilotchi va ro'yxatdan o'tganlar soni bitta so'rovda hisoblanayotganini tekshirish.
 
 ---
 

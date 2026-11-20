@@ -3,6 +3,10 @@ from django.utils import timezone
 from .models import Event
 
 class EventSerializer(serializers.ModelSerializer):
+    registered_count = serializers.IntegerField(read_only=True)
+    available_seats = serializers.SerializerMethodField(read_only=True)
+    organizer_email = serializers.EmailField(source='created_by.email', read_only=True)
+
     class Meta: 
         model = Event 
         fields = [
@@ -16,7 +20,11 @@ class EventSerializer(serializers.ModelSerializer):
             'status',
             'created_at',
             'updated_at',
-            'created_by'
+            'created_by',
+            'registered_count',
+            'available_seats',
+            'organizer_email',
+
         ]
         read_only_fields = [
             'id',
@@ -24,7 +32,12 @@ class EventSerializer(serializers.ModelSerializer):
             'created_by', 
             'created_at',
             'updated_at',
+            'registered_count',
+            'available_seats',
+            'organizer_email',
         ]
+
+    
 
 
     def validate(self, attrs):
@@ -44,8 +57,13 @@ class EventSerializer(serializers.ModelSerializer):
 
 
 
-
     def validate_capacity(self, value):
         if value is not None and value <= 0:
             raise serializers.ValidationError("Capacity 0 dan katta bo'lish shart!")
         return value 
+
+    def get_available_seats(self, obj):
+        if obj.capacity is None:
+            return None
+        count = getattr(obj, 'registered_count', 0)
+        return max(0, obj.capacity - count)
