@@ -678,83 +678,266 @@ class EventViewSet(viewsets.ModelViewSet):
 
 ---
 
-## 5-BOSQICH (5-kun): Registration modeli va Tadbirga yozilish (Race Condition oldini olish)
+## 5-BOSQICH (5-kun): Ro'yxatdan o'tish (Registration) Tizimi va Race Condition Muammosi
+
+> **Mentor eslatmasi:**  
+> "Tadbirda atigi 1 ta joy qolganda 10 kishi birdaniga ariza bersa, oddiy tekshiruv ish bermaydi va 1 ta joyga 10 kishi yozilib ketadi (Race Condition). Buni yechish uchun biz `transaction.atomic()` va PostgreSQL darajasida qatorni qulflash — `select_for_update()` dan foydalanamiz."
 
 ### 🎯 Maqsad:
-`Registration` modelini yaratish va `POST /api/v1/events/{id}/register/` da `select_for_update()` yordamida race condition xavfini bartaraf etish.
+Alohida `apps/registrations` ilovasini yaratish, `Registration` modelini tuzish, `select_for_update()` orqali Race Condition xavfini bartaraf etuvchi ro'yxatdan o'tish (Service Layer) biznes mantiqini va `POST /api/v1/events/{id}/register/` API endpointini joriy etish.
 
 ---
 
 ### 📋 Vazifalar va Real Kod Misollari:
 
-#### 5.1. `Registration` modeli (`apps/events/models.py`)
+#### 5.1. Yangi ilova yaratish (`apps/registrations`) va sozlash
+- 💻 **Terminalda bajarish:**
+```bash
+python manage.py startapp registrations apps/registrations
+```
+
+- 📁 **Qaysi faylga:** `apps/registrations/apps.py`
 ```python
+# apps/registrations/apps.py
+from django.apps import AppConfig
+
+class RegistrationsConfig(AppConfig):
+    default_auto_field = 'django.db.models.BigAutoField'
+    name = 'apps.registrations'
+```
+
+- 📁 **Qaysi faylga:** `config/settings.py`
+```python
+# config/settings.py
+INSTALLED_APPS = [
+    # ...
+    # Local apps
+    'apps.users',
+    'apps.events',
+    'apps.registrations',  # <-- yangi qo'shiladi
+]
+```
+> 💡 **Izoh:** Ro'yxatdan o'tishlar va chiptalar tarixini modulli arxitektura asosida alohida toza ilovada yuritish uchun yangi ilova ochiladi va Django sozlamalariga ulanadi.
+
+---
+
+#### 5.2. `Registration` modeli va Unikal Constraint (`apps/registrations/models.py`)
+- 📁 **Qaysi faylga:** `apps/registrations/models.py`
+```python
+# apps/registrations/models.py
+from django.db import models
+from django.conf import settings
+from apps.events.models import Event
+
 class Registration(models.Model):
     class Status(models.TextChoices):
-        ACTIVE = 'active', 'Active'
+        CONFIRMED = 'confirmed', 'Confirmed'
         CANCELLED = 'cancelled', 'Cancelled'
 
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='registrations')
-    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='registrations')
-    status = models.CharField(max_length=10, choices=Status.choices, default=Status.ACTIVE)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='registrations'
+    )
+    event = models.ForeignKey(
+        Event,
+        on_delete=models.CASCADE,
+        related_name='registrations'
+    )
+    status = models.CharField(
+        max_length=15,
+        choices=Status.choices,
+        default=Status.CONFIRMED
+    )
     reminder_sent = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
+        ordering = ['-created_at']
         constraints = [
-            # BR-1: Bir foydalanuvchi bir tadbirga faqat bir marta yoziladi
-            models.UniqueConstraint(fields=['user', 'event'], name='unique_user_event_registration')
+            # BR-1: Bitta foydalanuvchi ayni bitta tadbirda faqat bitta aktiv ro'yxatga ega bo'lishi mumkin
+            models.UniqueConstraint(
+                fields=['user', 'event'],
+                condition=models.Q(status='confirmed'),
+                name='unique_active_user_event_registration'
+            )
         ]
+
+    def __str__(self):
+        return f"{self.user.email} -> {self.event.title} ({self.status})"
+```
+> 💡 **Izoh:** 
+> - `related_name='registrations'` orqali 4-bosqichda yozilgan `Event.objects.annotate(registered_count=Count('registrations', ...))` to'g'ridan-to'g'ri ishlab ketadi.
+> - `UniqueConstraint` esa ma'lumotlar bazasi darajasida bitta odam ayni bitta tadbirga bir vaqtda qayta-qayta yozilishining oldini oladi.
+
+---
+
+#### 5.3. Race Condition'ni yenguvchi Biznes Servis (`apps/registrations/services.py`)
+- 📁 **Qaysi faylga:** `apps/registrations/services.py` [YANGI FAYL]
+```python
+# apps/registrations/services.py
+from django.db import transaction
+from django.utils import timezone
+from rest_framework.exceptions import ValidationError
+from apps.events.models import Event
+from .models import Registration
+
+def register_user_to_event(user, event_id: int) -> Registration:
+    """
+    Foydalanuvchini tadbirga ro'yxatdan o'tkazish xizmati.
+    Race Condition oldini olish uchun PostgreSQL darajasida 'select_for_update()' ishlatiladi.
+    """
+    with transaction.atomic():
+        # 1. Tadbir qatorini qulflaymiz (Race condition ga qarshi)
+        try:
+            event = Event.objects.select_for_update().get(id=event_id)
+        except Event.DoesNotExist:
+            raise ValidationError({"detail": "Tadbir topilmadi.", "code": "event_not_found"})
+
+        # 2. BR-5: Yopilgan yoki bekor qilingan tadbirga yozilib bo'lmaydi
+        if event.status in [Event.Status.CLOSED, Event.Status.CANCELLED]:
+            raise ValidationError({"detail": "Tadbir ro'yxatdan o'tish uchun yopiq.", "code": "event_closed"})
+
+        # 3. BR-3: Boshlanib ketgan tadbirga yozilib bo'lmaydi
+        if event.start_at <= timezone.now():
+            raise ValidationError({"detail": "Tadbir allaqachon boshlangan yoki o'tib ketgan.", "code": "event_started"})
+
+        # 4. BR-1: Foydalanuvchi allaqachon aktiv yozilgan bo'lsa rad etiladi
+        existing_reg = Registration.objects.filter(user=user, event=event).first()
+        if existing_reg and existing_reg.status == Registration.Status.CONFIRMED:
+            raise ValidationError({"detail": "Siz bu tadbirga allaqachon ro'yxatdan o'tgansiz.", "code": "already_registered"})
+
+        # 5. BR-2: Sig'im (capacity) tekshiruvi
+        if event.capacity is not None:
+            confirmed_count = event.registrations.filter(status=Registration.Status.CONFIRMED).count()
+            if confirmed_count >= event.capacity:
+                # O'rinlar to'lgan bo'lsa statusni avtomatik FULL qilamiz
+                if event.status != Event.Status.FULL:
+                    event.status = Event.Status.FULL
+                    event.save(update_fields=['status', 'updated_at'])
+                raise ValidationError({"detail": "Ushbu tadbirda bo'sh joy qolmagan!", "code": "event_full"})
+
+        # 6. Agar avval ro'yxatdan o'tib, keyin bekor qilgan bo'lsa — qayta CONFIRMED qilamiz
+        if existing_reg and existing_reg.status == Registration.Status.CANCELLED:
+            existing_reg.status = Registration.Status.CONFIRMED
+            existing_reg.cancelled_at = None
+            existing_reg.save(update_fields=['status', 'cancelled_at'])
+            return existing_reg
+
+        # 7. Yangi ro'yxatdan o'tishni yaratamiz
+        return Registration.objects.create(
+            user=user,
+            event=event,
+            status=Registration.Status.CONFIRMED
+        )
+```
+> 💡 **Nega kerak (Izoh):**
+> Bir soniyada 100 ta so'rov kelsa ham, `select_for_update()` PostgreSQL darajasida tadbir qatorini qulflaydi va so'rovlarni bittalab navbatga qo'yadi. Birinchi odam o'rinni egallab to'ldirishi bilan, navbatdagi so'rovlar "Bo'sh joy qolmagan" xatosini oladi.
+
+---
+
+#### 5.4. Serializer va View (`apps/registrations/serializers.py` va `apps/registrations/views.py`)
+- 📁 **Qaysi faylga:** `apps/registrations/serializers.py` [YANGI FAYL]
+```python
+# apps/registrations/serializers.py
+from rest_framework import serializers
+from .models import Registration
+
+class RegistrationSerializer(serializers.ModelSerializer):
+    event_title = serializers.CharField(source='event.title', read_only=True)
+    user_email = serializers.EmailField(source='user.email', read_only=True)
+
+    class Meta:
+        model = Registration
+        fields = [
+            'id',
+            'event',
+            'event_title',
+            'user',
+            'user_email',
+            'status',
+            'created_at',
+            'reminder_sent',
+        ]
+        read_only_fields = [
+            'id',
+            'event',
+            'event_title',
+            'user',
+            'user_email',
+            'status',
+            'created_at',
+            'reminder_sent',
+        ]
+```
+
+- 📁 **Qaysi faylga:** `apps/registrations/views.py`
+```python
+# apps/registrations/views.py
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status, permissions
+from .serializers import RegistrationSerializer
+from .services import register_user_to_event
+
+class EventRegisterView(APIView):
+    """
+    POST /api/v1/events/{event_id}/register/
+    Foydalanuvchini tadbirga ro'yxatdan o'tkazish endpointi
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, event_id: int):
+        registration = register_user_to_event(user=request.user, event_id=event_id)
+        serializer = RegistrationSerializer(registration)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 ```
 
 ---
 
-#### 5.2. Biznes Mantiq (`apps/events/services.py`)
-> 💡 **Diqqat:** Biznes qoidalar (BR-1, BR-2, BR-3, BR-5) va `select_for_update()` qulfi aynan shu yerda yoziladi!
-
+#### 5.5. URL marshrutlarini ulash (`apps/registrations/urls.py` va `config/urls.py`)
+- 📁 **Qaysi faylga:** `apps/registrations/urls.py` [YANGI FAYL]
 ```python
-from django.db import transaction
-from django.utils import timezone
-from rest_framework.exceptions import ValidationError
-from .models import Event, Registration
+# apps/registrations/urls.py
+from django.urls import path
+from .views import EventRegisterView
 
-def register_user_to_event(user, event_id):
-    with transaction.atomic():
-        # Race condition oldini olish uchun qatordan qulf (lock) olamiz
-        try:
-            event = Event.objects.select_for_update().get(pk=event_id)
-        except Event.DoesNotExist:
-            raise ValidationError({"detail": "Tadbir topilmadi.", "code": "not_found"})
-
-        # BR-5: Yopilgan tadbirga yozilish mumkin emas
-        if event.status == Event.Status.CLOSED:
-            raise ValidationError({"detail": "Tadbir yopilgan.", "code": "event_closed"})
-
-        # BR-3: Boshlanib ketgan tadbirga yozilish mumkin emas
-        if event.start_at <= timezone.now():
-            raise ValidationError({"detail": "Tadbir allaqachon boshlangan.", "code": "event_started"})
-
-        # Foydalanuvchining avvalgi ro'yxatdan o'tishini tekshiramiz
-        reg = Registration.objects.filter(user=user, event=event).first()
-        if reg and reg.status == Registration.Status.ACTIVE:
-            raise ValidationError({"detail": "Siz bu tadbirga allaqachon yozilgansiz.", "code": "already_registered"})
-
-        # BR-2: Joylar soni cheklangan bo'lsa tekshiramiz
-        if event.capacity is not None:
-            active_count = Registration.objects.filter(event=event, status=Registration.Status.ACTIVE).count()
-            if active_count >= event.capacity:
-                raise ValidationError({"detail": "Bo‘sh joy qolmagan.", "code": "event_full"})
-
-        # Agar avval bekor qilingan bo'lsa, uni qayta faollashtiramiz
-        if reg:
-            reg.status = Registration.Status.ACTIVE
-            reg.cancelled_at = None
-            reg.save()
-            return reg
-        else:
-            return Registration.objects.create(user=user, event=event, status=Registration.Status.ACTIVE)
+urlpatterns = [
+    path('events/<int:event_id>/register/', EventRegisterView.as_view(), name='event-register'),
+]
 ```
+
+- 📁 **Qaysi faylga:** `config/urls.py`
+```python
+# config/urls.py
+urlpatterns = [
+    # ...
+    path('api/v1/', include('apps.registrations.urls')),
+]
+```
+
+---
+
+#### 5.6. Migratsiyalarni yaratish va bazaga qo'llash
+- 💻 **Terminalda bajarish:**
+```bash
+python manage.py makemigrations registrations
+python manage.py migrate
+```
+> 💡 **Natija:** Bazada `registrations_registration` jadvali va unikal indeks hosil bo'ladi. Shu bilan birga, 4-bosqichdagi `apps/events/views.py` dagi `registered_count = Count('registrations', ...)` xatosi butunlay yo'qolib, avtomatik ishlab ketadi!
+
+---
+
+#### 5.7. Tekshirish va Sinov (Verification)
+1. **Tadbirga yozilish:**
+   - So'rov: `POST /api/v1/events/1/register/` (Header: `Authorization: Bearer <TOKEN>`)
+   - Natija: `201 Created` va ro'yxatdan o'tish ma'lumotlari qaytadi.
+2. **Qayta yozilishga urinish:**
+   - Xuddi shu so'rov yana yuborilganda: `400 Bad Request` ("Siz bu tadbirga allaqachon ro'yxatdan o'tgansiz").
+3. **4-bosqich API'sini tekshirish:**
+   - So'rov: `GET /api/v1/events/`
+   - Natija: Endi xato bermaydi! `registered_count: 1` va `available_seats: 99` deb bazadan to'g'ri hisoblab qaytaradi.
 
 ---
 
