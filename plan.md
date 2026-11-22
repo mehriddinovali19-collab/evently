@@ -1020,82 +1020,642 @@ class EventViewSet(viewsets.ModelViewSet):
 
 ---
 
-## 7-BOSQICH (7-kun): Telegram Bot va Hisobni bog'lash (aiogram 3)
+## 7-BOSQICH (7-kun): Telegram Bot Integratsiyasi va Xabarnomalar (`apps/notifications` va `bot/`)
+
+> **Mentor eslatmasi:**  
+> "Telegram bot — bu Django ichida emas, alohida mustaqil jarayon sifatida ishlovchi asinxron mikroxizmat. U bazaga to'g'ridan-to'g'ri kirmaydi, balki biz yaratgan REST API bilan alohida `api_client.py` orqali aloqa qiladi. Backend tomonida esa barcha Telegram logikasi (token generatsiya qilish, tasdiqlash, xabar yuborish) modulli arxitektura asosida toza **`apps/notifications`** ilovasida jamlanadi."
 
 ### 🎯 Maqsad:
-Foydalanuvchi profilini Telegram boti bilan bog'lash (`/start TOKEN`), va yozilganda xabarnoma yuborish.
+Loyiha arxitekturasini toza va professional ko'rinishga keltirish:
+1. **`apps/notifications`**: Telegram bilan ishlash bo'yicha Backend servislar (`services.py`), xavfsiz endpointlar (`views.py`: `/telegram/link/`, `/telegram/confirm/`, `/telegram/my-events/`), URL yo'riqnomasi (`urls.py`) va testlar (`tests/`).
+2. **`bot/`**: Aiogram 3 da ishlovchi mustaqil bot: sozlamalar (`config.py`), Backend API bilan aloqa mijozi (`api_client.py`), buyruqlar va xabar handlerlari (`handlers.py`) hamda bot ishga tushirish fayli (`main.py`).
+
+---
+
+### 📁 Ko'zda tutilgan Katalog Strukturasi:
+```
+apps/
+└── notifications/             # Telegram va xabarnomalar moduli
+    ├── __init__.py
+    ├── apps.py
+    ├── services.py            # send_message, notify_registration_success
+    ├── views.py               # /telegram/link/, /telegram/confirm/, /telegram/my-events/
+    ├── urls.py
+    └── tests/
+        ├── __init__.py
+        └── test_telegram_api.py
+
+bot/                           # Aiogram 3 bot (alohida jarayon)
+├── __init__.py
+├── config.py                  # Bot sozlamalari (.env dan o'qish)
+├── api_client.py              # Backend API bilan ishlash (httpx)
+├── handlers.py                # /start, /start <token>, /my_events handlerlari
+└── main.py                    # Bot polling va Dispatcher ishga tushirish
+```
 
 ---
 
 ### 📋 Vazifalar va Real Kod Misollari:
 
-#### 7.1. Telegram xabarnoma yuborish servisi (`apps/notifications/services.py`)
+#### 7.1. Yangi ilova yaratish (`apps/notifications`) va sozlash
+- 💻 **Terminalda bajarish:**
+```bash
+python manage.py startapp notifications apps/notifications
+```
+
+- 📁 **Qaysi faylga:** `apps/notifications/apps.py`
 ```python
-import httpx
+# apps/notifications/apps.py
+from django.apps import AppConfig
+
+class NotificationsConfig(AppConfig):
+    default_auto_field = 'django.db.models.BigAutoField'
+    name = 'apps.notifications'
+    verbose_name = 'Notifications and Telegram'
+```
+
+- 📁 **Qaysi faylga:** `config/settings.py`
+```python
+# config/settings.py
+INSTALLED_APPS = [
+    # ...
+    # Local apps
+    'apps.users',
+    'apps.events',
+    'apps.registrations',
+    'apps.notifications',  # <-- yangi qo'shiladi
+]
+```
+> 💡 **Nega kerak (Izoh):** Telegram va bildirishnomalar bilan bog'liq xizmatlarni boshqa ilovalarga qorishtirmasdan, mustaqil `apps/notifications` app ichida ajratish.
+
+---
+
+#### 7.2. Telegram Xabarnoma Servislari (`apps/notifications/services.py`)
+- 📁 **Qaysi faylga:** `apps/notifications/services.py` [YANGI FAYL]
+```python
+# apps/notifications/services.py
 import logging
+import httpx
 from django.conf import settings
 from django.db import transaction
 
 logger = logging.getLogger(__name__)
 
-def send_telegram_message(chat_id: int, text: str):
-    token = settings.TELEGRAM_BOT_TOKEN
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    try:
-        response = httpx.post(url, json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"}, timeout=5.0)
-        return response.is_success
-    except Exception as e:
-        logger.error(f"Telegram yuborishda xatolik: {e}")
+def send_telegram_message(chat_id: int, text: str) -> bool:
+    """
+    Telegram Bot API orqali ko'rsatilgan chat_id ga xabar yuborish.
+    HTML teglarni qo'llab-quvvatlaydi.
+    """
+    token = getattr(settings, 'TELEGRAM_BOT_TOKEN', None)
+    if not token:
+        logger.warning("TELEGRAM_BOT_TOKEN sozlanmagan, xabar yuborilmadi.")
         return False
 
-def notify_registration_success(registration):
-    """Tranzaksiyadan so'ng xabar yuborish"""
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML"
+    }
+
+    try:
+        response = httpx.post(url, json=payload, timeout=5.0)
+        if response.is_success:
+            return True
+        logger.error(f"Telegram API xatosi ({response.status_code}): {response.text}")
+        return False
+    except Exception as e:
+        logger.error(f"Telegram xabari yuborishda ulanish nosozligi: {e}")
+        return False
+
+def notify_registration_success(registration) -> None:
+    """
+    Foydalanuvchi tadbirga muvaffaqiyatli yozilganda Telegram xabari yuborish.
+    Tranzaksiya muvaffaqiyatli commit bo'lgandan keyin ishlaydi (on_commit).
+    """
     def _send():
         user = registration.user
         event = registration.event
         if user.telegram_chat_id:
             msg = (
-                f"✅ <b>Siz tadbirga muvaffaqiyatli yozildingiz!</b>\n\n"
+                f"🎉 <b>Tabriklaymiz, siz tadbirga muvaffaqiyatli yozildingiz!</b>\n\n"
                 f"📌 <b>{event.title}</b>\n"
-                f"🗓 {event.start_at.strftime('%Y-%m-%d %H:%M')}\n"
-                f"📍 {event.location}"
+                f"🗓 <b>Vaqti:</b> {event.start_at.strftime('%Y-%m-%d %H:%M')}\n"
+                f"📍 <b>Manzil:</b> {event.location}\n"
+                f"🔖 <b>Chipta ID:</b> #{registration.id}\n\n"
+                f"Tadbir haqida eslatma 24 soat oldin ushbu bot orqali yuboriladi!"
             )
             send_telegram_message(user.telegram_chat_id, msg)
-            
+
     transaction.on_commit(_send)
 ```
+> 💡 **Nega kerak (Izoh):** Ushbu servis orqali ham ro'yxatdan o'tishdagi xabarlar, ham 8-bosqichdagi 24 soatlik eslatmalar Telegram orqali bitta markazlashgan funksiya vositasida yuboriladi.
 
 ---
 
-#### 7.2. Bot `/start` Handler (`bot/handlers.py`)
+#### 7.3. Bog'lash va API Ko'rinishlari (`apps/notifications/views.py`)
+- 📁 **Qaysi faylga:** `apps/notifications/views.py`
 ```python
-from aiogram import Router, types
-from aiogram.filters import CommandStart, CommandObject
-import httpx
+# apps/notifications/views.py
+import secrets
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status, permissions
+from apps.registrations.models import Registration
+
+User = get_user_model()
+
+class TelegramLinkGenerateView(APIView):
+"""
+    POST /api/v1/notifications/telegram/link/
+    Tizimga kirgan foydalanuvchiga 32 baytlik xavfsiz bir martalik token
+    generatsiya qiladi va Telegram bot Deep-link havolasini taqdim etadi.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        token = secrets.token_urlsafe(32)
+        user.telegram_link_token = token
+        user.save(update_fields=['telegram_link_token'])
+
+        bot_username = getattr(settings, 'TELEGRAM_BOT_USERNAME', 'myeventlyBot')
+        bot_url = f"https://t.me/{bot_username}?start={token}"
+
+        return Response({
+            "token": token,
+            "bot_url": bot_url,
+            "message": "Ushbu havola orqali botga o'ting va 'Start' tugmasini bosing."
+        }, status=status.HTTP_200_OK)
+
+
+class TelegramConfirmView(APIView):
+    """
+    POST /api/v1/notifications/telegram/confirm/
+    Aiogram bot tomonidan tokenni tasdiqlash uchun chaqiriladi.
+    Xavfsizlik: X-Bot-Secret header tekshiriladi.
+    Body: {"token": "...", "chat_id": 123456789}
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        bot_secret = request.headers.get('X-Bot-Secret')
+        expected_secret = getattr(settings, 'BOT_API_SECRET', None)
+
+        if not expected_secret or bot_secret != expected_secret:
+            return Response(
+                {"detail": "Ruxsat berilmagan so'rov (X-Bot-Secret noto'g'ri)."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        token = request.data.get('token')
+        chat_id = request.data.get('chat_id')
+
+        if not token or not chat_id:
+            return Response(
+                {"detail": "token va chat_id talab qilinadi."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            user = User.objects.get(telegram_link_token=token)
+        except User.DoesNotExist:
+            return Response(
+                {"detail": "Havola eskirgan yoki token yaroqsiz."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Agar bu chat_id boshqa userga tegishli bo'lgan bo'lsa, avvalgisini bo'shatamiz
+        User.objects.filter(telegram_chat_id=chat_id).exclude(id=user.id).update(telegram_chat_id=None)
+
+        # Chat ID ni biriktiramiz va tokenni yoqib yuboramiz (bir martalik)
+        user.telegram_chat_id = chat_id
+        user.telegram_link_token = None
+        user.save(update_fields=['telegram_chat_id', 'telegram_link_token'])
+
+        return Response({
+            "detail": "Hisobingiz muvaffaqiyatli bog'landi.",
+            "email": user.email,
+            "full_name": f"{user.first_name} {user.last_name}".strip()
+        }, status=status.HTTP_200_OK)
+
+
+class TelegramUserEventsView(APIView):
+    """
+    POST /api/v1/notifications/telegram/my-events/
+    Aiogram bot foydalanuvchining chat_id si bo'yicha uning aktiv tadbirlarini so'raydi.
+    Header: X-Bot-Secret
+    Body: {"chat_id": 123456789}
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        bot_secret = request.headers.get('X-Bot-Secret')
+        expected_secret = getattr(settings, 'BOT_API_SECRET', None)
+
+        if not expected_secret or bot_secret != expected_secret:
+            return Response({"detail": "Taqiqlangan so'rov."}, status=status.HTTP_403_FORBIDDEN)
+
+        chat_id = request.data.get('chat_id')
+        if not chat_id:
+            return Response({"detail": "chat_id talab qilinadi."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(telegram_chat_id=chat_id)
+        except User.DoesNotExist:
+            return Response(
+                {"detail": "Ushbu Telegram akkauntga bog'langan foydalanuvchi topilmadi."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        registrations = (
+            Registration.objects
+            .filter(user=user, status=Registration.Status.CONFIRMED)
+            .select_related('event')
+            .order_by('event__start_at')
+        )
+
+        events_data = [
+            {
+                "registration_id": reg.id,
+                "event_title": reg.event.title,
+                "event_type": reg.event.event_type,
+                "location": reg.event.location,
+                "start_at": reg.event.start_at.strftime('%Y-%m-%d %H:%M'),
+                "status": reg.event.status,
+            }
+            for reg in registrations
+        ]
+
+        return Response({
+            "user_email": user.email,
+            "full_name": f"{user.first_name} {user.last_name}".strip(),
+            "count": len(events_data),
+            "events": events_data
+        }, status=status.HTTP_200_OK)
+```
+> 💡 **Nega kerak (Izoh):** Sayt foydalanuvchisi uchun havola yaratish, bot uchun esa maxfiy kalit bilan himoyalangan token tasdiqlash (`/confirm/`) va shaxsiy tadbirlarni olish (`/my-events/`) API interfeyslarini ta'minlaydi.
+
+---
+
+#### 7.4. Notifications URL marshrutlari (`apps/notifications/urls.py` va `config/urls.py`)
+- 📁 **Qaysi faylga:** `apps/notifications/urls.py` [YANGI FAYL]
+```python
+# apps/notifications/urls.py
+from django.urls import path
+from .views import (
+    TelegramLinkGenerateView,
+    TelegramConfirmView,
+    TelegramUserEventsView,
+)
+
+urlpatterns = [
+    path('telegram/link/', TelegramLinkGenerateView.as_view(), name='telegram_link'),
+    path('telegram/confirm/', TelegramConfirmView.as_view(), name='telegram_confirm'),
+    path('telegram/my-events/', TelegramUserEventsView.as_view(), name='telegram_my_events'),
+]
+```
+
+- 📁 **Qaysi faylga:** `config/urls.py`
+```python
+# config/urls.py
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('api/v1/auth/', include('apps.users.urls')),
+    path('api/v1/', include('apps.events.urls')),
+    path('api/v1/', include('apps.registrations.urls')),
+    path('api/v1/notifications/', include('apps.notifications.urls')),  # <-- yangi ulanadi
+    # ... Swagger sxemalari
+]
+```
+> 💡 **Nega kerak (Izoh):** Barcha Telegram endpointlari `/api/v1/notifications/telegram/...` ostida tartibli jamlanadi.
+
+---
+
+#### 7.5. Unit Testlar (`apps/notifications/tests/test_telegram_api.py`)
+- 📁 **Qaysi faylga:** `apps/notifications/tests/test_telegram_api.py` [YANGI FAYL]
+```python
+# apps/notifications/tests/test_telegram_api.py
+from django.test import TestCase
+from django.contrib.auth import get_user_model
+from django.conf import settings
+from rest_framework.test import APIClient
+from rest_framework import status
+
+User = get_user_model()
+
+class TelegramAPITestCase(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            email="testuser@example.com",
+            password="testpassword123",
+            first_name="Ali",
+            last_name="Valiyev"
+        )
+        self.bot_secret = getattr(settings, 'BOT_API_SECRET', 'my-very-secure-secret-token-123')
+
+    def test_link_generate_requires_auth(self):
+        # Autentifikatsiyasiz kirish taqiqlangan bo'lishi shart
+        response = self.client.post('/api/v1/notifications/telegram/link/')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_link_generate_success(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post('/api/v1/notifications/telegram/link/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('token', response.data)
+        self.assertIn('bot_url', response.data)
+
+        # Bazada token saqlanganligini tekshiramiz
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.telegram_link_token, response.data['token'])
+
+    def test_confirm_without_secret_fails(self):
+        response = self.client.post('/api/v1/notifications/telegram/confirm/', {
+            "token": "dummy_token",
+            "chat_id": 12345678
+        })
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_confirm_success(self):
+        # 1. Token yaratamiz
+        self.user.telegram_link_token = "valid_test_token_123"
+        self.user.save()
+
+        # 2. Bot nomidan to'g'ri header bilan tasdiqlaymiz
+        response = self.client.post(
+            '/api/v1/notifications/telegram/confirm/',
+            data={"token": "valid_test_token_123", "chat_id": 99887766},
+            format='json',
+            HTTP_X_BOT_SECRET=self.bot_secret
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # 3. Bazadagi holatni tekshiramiz: chat_id birikkan, token esa None bo'lishi shart
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.telegram_chat_id, 99887766)
+        self.assertIsNone(self.user.telegram_link_token)
+```
+> 💡 **Nega kerak (Izoh):** Xavfsizlik, tokenning to'g'ri birikishi va begona so'rovlar bloklanishi kafolatini avtomatik test orqali tekshirish.
+
+---
+
+#### 7.6. Aiogram 3: Bot Konfiguratsiyasi (`bot/config.py`)
+- 📁 **Qaysi faylga:** `bot/config.py` [YANGI FAYL]
+```python
+# bot/config.py
 import os
+from pathlib import Path
+import environ
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+env = environ.Env()
+env_file = os.path.join(BASE_DIR, '.env')
+if os.path.exists(env_file):
+    environ.Env.read_env(env_file)
+
+BOT_TOKEN = env('TELEGRAM_BOT_TOKEN', default='')
+BOT_API_SECRET = env('BOT_API_SECRET', default='my-very-secure-secret-token-123')
+BACKEND_API_URL = env('BACKEND_API_URL', default='http://localhost:8000/api/v1')
+
+if not BOT_TOKEN:
+    raise ValueError("TELEGRAM_BOT_TOKEN topilmadi! Iltimos, .env faylini to'ldiring.")
+```
+> 💡 **Nega kerak (Izoh):** Bot mustaqil jarayon bo'lib ishlaganda barcha parollar va backend manzilini `.env` orqali xavfsiz yuklaydi.
+
+---
+
+#### 7.7. Aiogram 3: Backend API Mijozi (`bot/api_client.py`)
+- 📁 **Qaysi faylga:** `bot/api_client.py` [YANGI FAYL]
+```python
+# bot/api_client.py
+import httpx
+import logging
+from bot.config import BACKEND_API_URL, BOT_API_SECRET
+
+logger = logging.getLogger(__name__)
+
+class BackendAPIClient:
+    """
+    Django Backend API bilan asinxron HTTP so'rovlar orqali
+    aloqa o'rnatuvchi xizmatlar to'plami.
+    """
+    def __init__(self, base_url: str = BACKEND_API_URL, secret: str = BOT_API_SECRET):
+        self.base_url = base_url.rstrip('/')
+        self.headers = {
+            "X-Bot-Secret": secret,
+            "Content-Type": "application/json"
+        }
+
+    async def confirm_telegram_account(self, token: str, chat_id: int):
+        """
+        Deep-link token va chat_id ni backendga yuborib hisobni tasdiqlaydi.
+        """
+        url = f"{self.base_url}/notifications/telegram/confirm/"
+        payload = {"token": token, "chat_id": chat_id}
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url, json=payload, headers=self.headers)
+            return response
+        except Exception as e:
+            logger.error(f"confirm_telegram_account ulanish xatosi: {e}")
+            return None
+
+    async def get_user_events(self, chat_id: int):
+        """
+        Foydalanuvchining chat_id si bo'yicha tadbirlari ro'yxatini oladi.
+        """
+        url = f"{self.base_url}/notifications/telegram/my-events/"
+        payload = {"chat_id": chat_id}
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url, json=payload, headers=self.headers)
+            return response
+        except Exception as e:
+            logger.error(f"get_user_events ulanish xatosi: {e}")
+            return None
+
+# Singleton obyekt
+api_client = BackendAPIClient()
+```
+> 💡 **Nega kerak (Izoh):** API bilan bog'liq barcha `httpx` so'rovlarini alohida `api_client.py` da jamlash handlerlarni qisqa, toza va oson o'qiladigan qiladi.
+
+---
+
+#### 7.8. Aiogram 3: Telegram Handlerlari (`bot/handlers.py`)
+- 📁 **Qaysi faylga:** `bot/handlers.py` [YANGI FAYL]
+```python
+# bot/handlers.py
+from aiogram import Router, types
+from aiogram.filters import CommandStart, CommandObject, Command
+from bot.api_client import api_client
 
 router = Router()
-BACKEND_URL = os.getenv("BACKEND_API_URL", "http://localhost:8000/api/v1")
-BOT_SECRET = os.getenv("BOT_API_SECRET", "my-very-secure-secret-token-123")
 
 @router.message(CommandStart())
 async def cmd_start(message: types.Message, command: CommandObject):
+    """
+    /start yoki /start <token> komandasi.
+    Foydalanuvchi akkauntini deep-link token orqali Evently profiliga bog'laydi.
+    """
     token = command.args
+
     if not token:
-        await message.answer("Assalomu alaykum! Hisobingizni bog'lash uchun saytdan havola orqali kiring.")
+        await message.answer(
+            f"Assalomu alaykum, <b>{message.from_user.first_name}</b>!\n\n"
+            "👋 <b>Evently Telegram Boti</b>ga xush kelibsiz!\n\n"
+            "Profilingizni sayt bilan bog'lash uchun, veb-saytimizdagi shaxsiy profilingizga kiring "
+            "va <b>'Telegram bilan bog'lash'</b> tugmasini bosing.\n\n"
+            "Agar akkauntingiz allaqachon ulangan bo'lsa, tadbirlaringizni ko'rish uchun /my_events buyrug'ini yuboring."
+        )
         return
 
-    async with httpx.AsyncClient() as client:
-        res = await client.post(
-            f"{BACKEND_URL}/telegram/confirm/",
-            headers={"X-Bot-Secret": BOT_SECRET},
-            json={"token": token, "chat_id": message.chat.id}
+    # Deep-link token mavjud bo'lsa — Backend API orqali tasdiqlaymiz
+    response = await api_client.confirm_telegram_account(token=token, chat_id=message.chat.id)
+
+    if response is None:
+        await message.answer("⚠️ Server bilan bog'lanishda nosozlik yuz berdi. Backend ishlayotganligini tekshiring.")
+        return
+
+    if response.status_code == 200:
+        data = response.json()
+        email = data.get('email', '')
+        full_name = data.get('full_name', '')
+        await message.answer(
+            "🎉 <b>Tabriklaymiz!</b>\n\n"
+            f"Hurmatli <b>{full_name or email}</b>, profilingiz Evently tizimiga muvaffaqiyatli bog'landi!\n\n"
+            "Endi siz:\n"
+            "• Tadbirlarga ro'yxatdan o'tganingizda darhol tasdiq xabarnomasini olasiz\n"
+            "• Tadbir boshlanishiga 24 soat qolganda eslatmalar qabul qilasiz\n"
+            "• /my_events buyrug'i orqali istalgan vaqtda barcha chiptalaringizni ko'ra olasiz."
         )
-        if res.status_code == 200:
-            await message.answer("✅ Hisobingiz muvaffaqiyatli bog'landi! Endi sizga tadbirlar bo'yicha eslatmalar keladi.")
-        else:
-            await message.answer("❌ Havola eskirgan yoki xato.")
+    elif response.status_code == 404:
+        await message.answer(
+            "❌ <b>Havola eskirgan yoki yaroqsiz!</b>\n\n"
+            "Ushbu havoladan avval foydalanilgan yoki muddati tugagan. Iltimos, saytdan yangi havola oling."
+        )
+    else:
+        await message.answer("⚠️ Akkauntni bog'lashda xatolik yuz berdi. Iltimos, qayta urinib ko'ring.")
+
+
+@router.message(Command("my_events"))
+async def cmd_my_events(message: types.Message):
+    """
+    /my_events komandasi:
+    Foydalanuvchining aktiv ro'yxatdan o'tgan tadbirlari ro'yxatini chiqaradi.
+    """
+    response = await api_client.get_user_events(chat_id=message.chat.id)
+
+    if response is None:
+        await message.answer("⚠️ Ma'lumotlarni olishda server bilan ulanish nosozligi.")
+        return
+
+    if response.status_code == 404:
+        await message.answer(
+            "❌ <b>Akkaunt bog'lanmagan!</b>\n\n"
+            "Sizning Telegram hisobingiz tizimdagi hech qaysi profilga ulanmagan.\n"
+            "Iltimos, saytdan profilingizga kiring va 'Telegram bilan bog'lash' tugmasini bosing."
+        )
+        return
+
+    if response.status_code != 200:
+        await message.answer("⚠️ Tadbirlarni yuklashda xatolik yuz berdi.")
+        return
+
+    data = response.json()
+    events = data.get("events", [])
+
+    if not events:
+        await message.answer(
+            f"👤 Hurmatli <b>{data.get('full_name') or data.get('user_email')}</b>,\n\n"
+            "Hozirda siz ro'yxatdan o'tgan faol tadbirlar mavjud emas."
+        )
+        return
+
+    text = f"📋 <b>Sizning tadbirlaringiz ({len(events)} ta):</b>\n\n"
+    for idx, ev in enumerate(events, 1):
+        text += (
+            f"<b>{idx}. {ev['event_title']}</b>\n"
+            f"🔹 Turi: {ev['event_type'].capitalize()}\n"
+            f"🗓 Sana: {ev['start_at']}\n"
+            f"📍 Manzil: {ev['location']}\n"
+            f"🔖 Chipta holati: <i>{ev['status']}</i>\n"
+            "─────────────────\n"
+        )
+
+    await message.answer(text)
 ```
+> 💡 **Nega kerak (Izoh):** Botga kelgan har qanday `/start` va `/my_events` buyruqlari qisqa, aniq va xatoliklarni to'g'ri ushlaydigan ko'rinishda ishlaydi.
+
+---
+
+#### 7.9. Aiogram 3: Bot Asosiy Kirish Nuqtasi (`bot/main.py`)
+- 📁 **Qaysi faylga:** `bot/main.py` [YANGI FAYL]
+```python
+# bot/main.py
+import asyncio
+import logging
+from aiogram import Bot, Dispatcher
+from aiogram.enums import ParseMode
+from aiogram.client.default import DefaultBotProperties
+
+from bot.config import BOT_TOKEN
+from bot.handlers import router
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+logger = logging.getLogger(__name__)
+
+async def main():
+    logger.info("Evently Telegram Bot ishga tushmoqda...")
+
+    bot = Bot(
+        token=BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+    )
+    dp = Dispatcher()
+
+    # Handlers routerni ulaymiz
+    dp.include_router(router)
+
+    # Eski kutilayotgan xabarlarni tozalab, pollingni boshlaymiz
+    await bot.delete_webhook(drop_pending_updates=True)
+    await dp.start_polling(bot)
+
+if __name__ == '__main__':
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Bot to'xtatildi.")
+```
+> 💡 **Nega kerak (Izoh):** Aiogram 3 da asinxron polling rejimida botni ishga tushiruvchi markaziy kirish nuqtasi (`entry point`).
+
+---
+
+#### 7.10. Tekshirish va Sinov (Verification)
+1. **API Testlarini ishga tushirish:**
+   ```bash
+   python manage.py test apps.notifications
+   ```
+2. **Bog'lash havolasini olish:**
+   - So'rov: `POST /api/v1/notifications/telegram/link/`
+   - Header: `Authorization: Bearer <USER_ACCESS_TOKEN>`
+   - Natija: `200 OK` va `bot_url` olinadi.
+3. **Botni ishga tushirish:**
+   ```bash
+   python -m bot.main
+   ```
+4. **Telegramda botni sinash:**
+   - `bot_url` orqali kirib `/start` bosiladi -> Akkaunt bog'lanadi va tabrik xabari keladi.
+   - Botda `/my_events` buyrug'i beriladi -> Foydalanuvchi tadbirlari ro'yxati ko'rsatiladi.
 
 ---
 

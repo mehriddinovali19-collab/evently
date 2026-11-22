@@ -365,42 +365,91 @@
 
 ---
 
-## 7-BOSQICH: Telegram Bot Integratsiyasi va Hisobni Bog'lash (Deep-Linking)
+## 7-BOSQICH: Telegram Bot Integratsiyasi va Xabarnomalar (apps/notifications va bot/)
 
 > **Mentor eslatmasi:**  
-> "Telegram bot — bu Django ichida emas, alohida mustaqil ishlovchi asinxron mikroxizmat. U bazaga to'g'ridan-to'g'ri kirmaydi, balki biz yaratgan REST API bilan `httpx` orqali aloqa qiladi. Saytdagi akkauntni botga bog'lash esa xavfsiz bir martalik Deep-link token orqali bajariladi."
+> "Telegram bot — bu Django ichida emas, alohida mustaqil ishlovchi asinxron mikroxizmat. U bazaga to'g'ridan-to'g'ri kirmaydi, balki biz yaratgan REST API bilan `api_client.py` orqali aloqa qiladi. Saytdagi akkauntni botga bog'lash esa xavfsiz bir martalik Deep-link token orqali bajariladi. Backend tomonda esa Telegram bilan bog'liq barcha mantiq (servislar, endpointlar, URLlar va testlar) toza **`apps/notifications`** ilovasida jamlanadi."
 
 ### 🎯 Bu bosqichda nima ishlar qilinishi kerak?
 
-- [ ] **Backendda bir martalik bog'lash tokeni yaratish:**
-  - 📁 **Qaysi fayllarga:** `apps/users/views.py` va `apps/users/urls.py`
+- [ ] **Kataloglar strukturasi va yangi ilova yaratish (`apps/notifications`):**
+  - 📁 **Qaysi papka/fayllarga:** `apps/notifications/apps.py` va `config/settings.py`
+  - 📝 **Nima qilinadi:** Terminalda: `python manage.py startapp notifications apps/notifications` bajariladi. `apps/notifications/apps.py` da `name = 'apps.notifications'` sozlanadi va `config/settings.py` dagi `INSTALLED_APPS` ro'yxatiga `'apps.notifications'` qo'shiladi.
+  - 💡 **Nega kerak (Izoh):** Telegram bot va xabarnomalar bilan bog'liq barcha Backend xizmatlarini `users` yoki `events` ga aralashtirmasdan, modulli arxitektura asosida mustaqil ilova ichida toza boshqarish uchun.
+
+- [ ] **Telegram Xabarnoma Servislari (Service Layer):**
+  - 📁 **Qaysi faylga:** `apps/notifications/services.py` [YANGI FAYL]
+  - 📝 **Nima yoziladi:**
+    - `send_telegram_message(chat_id: int, text: str)`: `httpx` orqali Telegram Bot API (`https://api.telegram.org/bot<TOKEN>/sendMessage`) ga HTML formatida xabar yuboruvchi yagona funksiya.
+    - `notify_registration_success(registration)`: Foydalanuvchi tadbirga muvaffaqiyatli yozilganda `transaction.on_commit()` orqali uning Telegramiga chipta ma'lumotlari bilan tasdiq xabarnomasini yo'llovchi servis.
+  - 💡 **Nega kerak (Izoh):** Backenddan Telegramga xabar yuborish mantiqini bitta toza funksiyada markazlashtirish uchun. Ushbu servis ham tadbirga yozilishda, ham 8-bosqichdagi 24 soatlik avtomatik eslatmalarda bevosita qayta ishlatiladi (DRY prinsipi).
+
+- [ ] **Backendda bir martalik bog'lash tokeni yaratish View:**
+  - 📁 **Qaysi faylga:** `apps/notifications/views.py` [YANGI FAYL]
   - 📝 **Nima yoziladi:** `TelegramLinkGenerateView(APIView)`:
     - `permission_classes = [IsAuthenticated]`
-    - `token = secrets.token_urlsafe(32)` generatsiya qilib, foydalanuvchining `telegram_link_token` maydoniga yozadi.
-    - Foydalanuvchiga bot havolasini qaytaradi: `https://t.me/bizning_botimiz?start={token}`.
-  - 💡 **Nega kerak (Izoh):** Foydalanuvchi saytdagi tugmani bosganda uning akkauntini botga aniq va begonalarsiz bog'laydigan xavfsiz havola berish uchun.
+    - `token = secrets.token_urlsafe(32)` generatsiya qilib, `request.user.telegram_link_token` maydoniga saqlaydi.
+    - Foydalanuvchiga bot havolasini qaytaradi: `https://t.me/<bot_username>?start={token}`.
+  - 💡 **Nega kerak (Izoh):** Foydalanuvchi saytdagi "Telegram bilan bog'lash" tugmasini bosganda uning akkauntini botga aniq va begonalarsiz bog'laydigan xavfsiz Deep-link havolasini generatsiya qilish uchun.
 
-- [ ] **Backendda Bot uchun Maxfiy Webhook Endpointi:**
-  - 📁 **Qaysi fayllarga:** `apps/users/views.py` va `apps/users/urls.py`
-  - 📝 **Nima yoziladi:** `TelegramConnectView(APIView)`:
-    - Xavfsizlik: So'rov header'ida `X-Bot-Api-Secret` tekshiriladi (agar kalit to'g'ri bo'lmasa `403 Forbidden`).
-    - Body'dan `token` va `telegram_chat_id` olinadi.
-    - Berilgan token bo'yicha foydalanuvchi topiladi, uning `telegram_chat_id` siga yoziladi va `telegram_link_token = None` qilinadi (token kuyadi).
-  - 💡 **Nega kerak (Izoh):** Bot foydalanuvchining telegram ID raqamini Django ma'lumotlar bazasidagi User jadvaliga yozib qo'yishi uchun.
+- [ ] **Backendda Bot uchun Maxfiy Tasdiqlash (Confirm) Endpointi:**
+  - 📁 **Qaysi faylga:** `apps/notifications/views.py`
+  - 📝 **Nima yoziladi:** `TelegramConfirmView(APIView)`:
+    - Xavfsizlik: So'rov header'ida `X-Bot-Secret` tekshiriladi (agar kalit to'g'ri bo'lmasa `403 Forbidden`).
+    - Body'dan `token` va `chat_id` olinadi.
+    - Berilgan token bo'yicha foydalanuvchi topiladi, uning `telegram_chat_id` siga yoziladi va `telegram_link_token = None` qilinadi (token yoqib yuboriladi).
+  - 💡 **Nega kerak (Izoh):** Bot foydalanuvchining Telegram chat ID raqamini Django ma'lumotlar bazasidagi User jadvaliga yozib qo'yishi uchun. Token bir marta ishlatilgach yo'q qilinishi begona urinishlarning oldini oladi.
 
-- [ ] **Aiogram 3 da Telegram Bot loyihasini qurish:**
-  - 📁 **Qaysi papka/fayllarga:** `bot/main.py`, `bot/config.py`, `bot/handlers/start.py` [YANGI PAPKA VA FAYLLAR]
+- [ ] **Backendda Bot uchun Shaxsiy Tadbirlarni Olish Endpointi:**
+  - 📁 **Qaysi faylga:** `apps/notifications/views.py`
+  - 📝 **Nima yoziladi:** `TelegramUserEventsView(APIView)`:
+    - Xavfsizlik: So'rov header'ida `X-Bot-Secret` tekshiriladi.
+    - Body'dan `chat_id` olinadi va ushbu foydalanuvchining aktiv (`confirmed`) ro'yxatdan o'tgan tadbirlari bazadan tortib olinadi.
+    - Tadbirlar ro'yxatini JSON formatida qaytaradi.
+  - 💡 **Nega kerak (Izoh):** Telegram bot `/my_events` buyrug'i kelganda backenddan foydalanuvchining barcha chiptalari va tadbirlari ro'yxatini xavfsiz so'rab olishi uchun.
+
+- [ ] **Notifications URL marshrutlari:**
+  - 📁 **Qaysi fayllarga:** `apps/notifications/urls.py` [YANGI FAYL] va `config/urls.py`
   - 📝 **Nima yoziladi:**
-    - `bot/main.py` — `Bot`, `Dispatcher` va polling'ni ishga tushiruvchi asinxron `async def main()`.
-    - `/start <token>` handler'i: kelgan deep-link tokenni olib, Backendning `/api/v1/auth/telegram/connect/` endpointiga `httpx.AsyncClient` orqali POST so'rovi yuboradi.
-    - Muvaffaqiyatli bo'lsa: "Profilingiz Evently tizimiga muvaffaqiyatli ulandi!" deb javob beradi.
-  - 💡 **Nega kerak (Izoh):** Foydalanuvchilar Telegram orqali xabar olishlari va tadbirlarini kuzatib borishlari uchun interfeys yaratish.
+    - `apps/notifications/urls.py`:
+      - `path('telegram/link/', TelegramLinkGenerateView.as_view(), name='telegram_link')`
+      - `path('telegram/confirm/', TelegramConfirmView.as_view(), name='telegram_confirm')`
+      - `path('telegram/my-events/', TelegramUserEventsView.as_view(), name='telegram_my_events')`
+    - `config/urls.py` ga `path('api/v1/notifications/', include('apps.notifications.urls'))` ni ulash.
+  - 💡 **Nega kerak (Izoh):** Yaratilgan Telegram API endpointlarini umumiy loyiha marshrut tizimiga toza prefiks bilan bog'lash uchun.
 
-- [ ] **Botdagi foydali buyruqlar:**
-  - 📁 **Qaysi faylga:** `bot/handlers/events.py`
+- [ ] **Notifications Unit Testlari:**
+  - 📁 **Qaysi papka/faylga:** `apps/notifications/tests/test_telegram_api.py` [YANGI PAPKA VA FAYL]
   - 📝 **Nima yoziladi:**
-    - `/my_events` komandasi: backenddan ushbu `telegram_chat_id` ga tegishli arizalarni so'rab olib, chiroyli ro'yxat qilib chiqarib berish.
-  - 💡 **Nega kerak (Izoh):** Foydalanuvchi saytga kirmasdan ham Telegram orqali o'z chiptalari va tadbirlarini ko'ra olishi uchun.
+    - Autentifikatsiyasiz havola olmoqchi bo'lganda `401 Unauthorized` testi.
+    - Avtorizatsiyadan o'tgan userga token berilishi va bazada saqlanishi testi (`200 OK`).
+    - `X-Bot-Secret` siz yoki noto'g'ri maxfiy kalit kelganda `403 Forbidden` testi.
+    - To'g'ri token va `chat_id` bilan `/confirm/` chaqirilganda `telegram_chat_id` saqlanishi va token o'chirilishi testi.
+  - 💡 **Nega kerak (Izoh):** Akkauntni bog'lash mexanizmi va xavfsizlik filtrlari sinmasligini avtomatlashtirilgan testlar orqali kafolatlash uchun.
+
+- [ ] **Aiogram 3 da Bot Konfiguratsiyasi:**
+  - 📁 **Qaysi faylga:** `bot/config.py` [YANGI FAYL]
+  - 📝 **Nima yoziladi:** `.env` faylidan `TELEGRAM_BOT_TOKEN`, `BOT_API_SECRET` va `BACKEND_API_URL` ni xavfsiz o'qib oluvchi modul.
+  - 💡 **Nega kerak (Izoh):** Bot mustaqil mikroxizmat bo'lib ishlaganda barcha parollar va backend URL manzillarini tashqi muhit o'zgaruvchilaridan xavfsiz olishi uchun.
+
+- [ ] **Aiogram 3 da Backend API Mijozi (API Client):**
+  - 📁 **Qaysi faylga:** `bot/api_client.py` [YANGI FAYL]
+  - 📝 **Nima yoziladi:** `BackendAPIClient` klassi:
+    - `confirm_telegram_account(token, chat_id)`: Backendning `/notifications/telegram/confirm/` endpointiga `X-Bot-Secret` sarlavhasi bilan asinxron HTTP so'rov yuborish.
+    - `get_user_events(chat_id)`: Backendning `/notifications/telegram/my-events/` endpointiga so'rov yuborib faol tadbirlar ro'yxatini olish.
+  - 💡 **Nega kerak (Izoh):** Bot handlerlari ichida xom `httpx` so'rovlari va sarlavhalarni takrorlamasdan, butun tarmoq aloqasini alohida servis (API client layer) orqali toza boshqarish uchun.
+
+- [ ] **Aiogram 3 da Buyruq va Xabar Handlerlari:**
+  - 📁 **Qaysi faylga:** `bot/handlers.py` [YANGI FAYL]
+  - 📝 **Nima yoziladi:**
+    - `/start` va `/start <token>` handler'i: kelgan deep-link tokenni `api_client.confirm_telegram_account` orqali tekshirish. Muvaffaqiyatli bo'lsa tabrik xabari, xato bo'lsa yo'naltiruvchi javob berish.
+    - `/my_events` handler'i: `api_client.get_user_events` orqali tadbirlarni tortib olib, qatnashuvchiga chiroyli HTML ro'yxat ko'rinishida chiqarish.
+  - 💡 **Nega kerak (Izoh):** Foydalanuvchilarning Telegramdagi buyruqlarini qabul qilib, ularga tushunarli vizual interfeys taqdim etish uchun.
+
+- [ ] **Aiogram 3 da Bot Kirish Nuqtasi (Main Entrypoint):**
+  - 📁 **Qaysi faylga:** `bot/main.py` [YANGI FAYL]
+  - 📝 **Nima yoziladi:** `Bot`, `Dispatcher` va `dp.include_router(router)` orqali asinxron polling rejimida botni ishga tushiruvchi `async def main()`.
+  - 💡 **Nega kerak (Izoh):** Botni terminalda mustaqil jarayon (`python -m bot.main`) sifatida ishga tushirish va Telegram serverlaridan yangilanishlarni (updates) qabul qilib turish uchun.
 
 ---
 

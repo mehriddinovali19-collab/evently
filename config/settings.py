@@ -60,6 +60,7 @@ INSTALLED_APPS = [
     'apps.users',
     'apps.events',
     'apps.registrations',
+    'apps.notifications',
 
 ]
 
@@ -176,3 +177,8 @@ SPECTACULAR_SETTINGS = {
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
 }
+
+# botning settinglari
+TELEGRAM_BOT_TOKEN = env('TELEGRAM_BOT_TOKEN')
+TELEGRAM_BOT_USERNAME = env('TELEGRAM_BOT_USERNAME')
+BOT_API_SECRET = env('BOT_API_SECRET')
