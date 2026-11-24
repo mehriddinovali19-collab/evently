@@ -15,7 +15,7 @@ class Command(BaseCommand):
         regs = Registration.objects.filter(
             status= Registration.Status.CONFIRMED,
             reminder_sent= False,
-            event__status= Event.Status.OPEN,
+            event__status= [Event.Status.OPEN, Event.Status.FULL],
             event__start_at__gt= now,
             event__start_at__lte= reminder_limit,
             user__telegram_chat_id__isnull=False

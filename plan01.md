@@ -1,583 +1,452 @@
-# Evently — Professional Backend Dasturchi Uchun Yo'l Xaritasi (Mentor Guide)
+# 🐳 10-BOSQICH (PHASE 10): SERVERGA YUKLASHGA TAYYORLASH VA DOCKERLASHTIRISH (PRE-DEPLOYMENT GUIDE)
 
 > **Mentor so'zi:**  
-> "Ukam / do'stim, ushbu qo'llanmada senga har bir bosqichda qaysi fayl nima vazifani bajarishi, aynan qayerga nima yozilishi va nima uchun yozilishi batafsil tushuntiriladi.  
-> Dasturchilikda eng katta chalkashlik — qaysi kod qayerga yozilishini bilmaslikdan kelib chiqadi.  
-> Esda tut: **`models.py`** — bu ma'lumotlar bazasi jadvallari, **`serializers.py`** — kelayotgan JSON ma'lumotlarni tekshirish (validatsiya) va tozalash, **`views.py`** — API so'rovlarini qabul qilib javob beruvchi miya, **`urls.py`** — marshrutlar yo'l ko'rsatkichi, **`permissions.py`** — xavfsizlik darvozasi.  
-> Har bir topshiriq ostida uning fayli, vazifasi va izohi keltirilgan. Qani, boshladik!"
+> "Ukam / do'stim, tabriklayman! Sen loyihaning barcha asosiy funksiyalarini (Users, Events, Registrations, Notifications, Telegram Bot) yozib bo'lding. Endi 10-bosqich — **Deployment (Serverga chiqarish)** ga keldik!  
+> Loyihani to'g'ridan-to'g'ri serverga tashlashdan oldin, uni **server muhitiga tayyorlash (pre-deployment)** kerak. Buning uchun:
+> 1. Statik fayllar (Jazzmin admin CSS) serverda ishlashi uchun **WhiteNoise** va **Gunicorn** ulanadi;
+> 2. `settings.py` ga production xavfsizlik sozlamalari kiritiladi;
+> 3. Tizim to'liq **Docker va Docker Compose** ga o'raladi (Web, Bot, Baza bitta yaxlit mexanizmga aylanadi);
+> 4. Lokal kompyuteringda konteynerlarni bir marta yurgizib, hammasi xatosiz ishlayotganiga ishonch hosil qilinadi;
+> 5. So'ngra serverga (AWS ga) birgina `git clone` va `docker compose up` bilan uzatiladi.  
+> 
+> Quyida aynan nima ish qilish kerakligi, qaysi faylga qanday kod yozilishi va nima sababdan yozilishi qadamma-qadam, tartib bilan keltirilgan. Boshladik!"
 
 ---
 
-## 📌 Status Belgilari (O'zingiz belgilab boring)
-- `[ ]` — Hali boshlanmagan
-- `[/]` — Jarayonda
-- `[x]` — Bajarildi, sinovdan o'tdi va git commit qilindi
-
----
-
-## 🧰 Umumiy Texnologiyalar Steki va Kutubxonalar
-
-| Kutubxona / Texnologiya | Versiya / Standart | Nimaga aynan shu? (Mentordan izoh) |
-| :--- | :--- | :--- |
-| **Python** | 3.11+ | Zamonaviy sintaksis, xatoliklarni aniq ko'rsatish va tezlik. |
-| **Django** | 5.0+ | Kuchli ORM, admin panel, xavfsizlik choralari va ishonchli arxitektura. |
-| **Django REST Framework (DRF)** | 3.15+ | Standart RESTful API qurish, serializer'lar va permission'lar uchun sanoat standarti. |
-| **djangorestframework-simplejwt** | 5.3+ | Xavfsiz, stateless JWT (JSON Web Token) autentifikatsiyasini oson sozlash. |
-| **psycopg (psycopg 3)** | 3.1+ | PostgreSQL bilan ishlash uchun eng yangi, asinxron qo'llab-quvvatlovchi, tezkor drayver. |
-| **django-environ** | 0.11+ | `.env` orqali 12-Factor App tamoyiliga ko'ra konfiguratsiyani xavfsiz boshqarish. |
-| **django-filter** | 24.0+ | REST API'larda dinamik qidiruv va filtrlashni bir necha qatorda tashkil qilish. |
-| **django-cors-headers** | 4.3+ | Keyinchalik frontend (React, Vue) ulanganda CORS (Cross-Origin) blokirovkasini oldini olish. |
-| **drf-spectacular** | 0.27+ | Zamonaviy OpenAPI 3.0 sxemasi va chiroyli Swagger UI/Redoc yaratish. |
-| **aiogram** | 3.4+ | Asinxron Telegram bot yaratish uchun eng mashhur Python kutubxona. |
-| **httpx** | 0.27+ | Bot va Backend o'rtasida zamonaviy asinxron HTTP so'rovlar yuborish. |
-| **pytest & pytest-django** | 8.0+ | Djangoning standart `TestCase`iga qaraganda ancha qulay va tezkor test tizimi. |
-
----
-
-## 🧭 Loyihaning Bosqichma-bosqich Rejasi (Phases)
+## 📌 QADAMMA-QADAM HARAKATLAR XARITASI
 
 ```
-[Phase 1: Muhit, Baza va Custom User] (Bajarildi ✅)
-                ⬇
-[Phase 2: JWT Auth, Profil va Swagger] (Hozirgi Bosqich 🎯)
-                ⬇
-[Phase 3: Events CRUD va Maxsus Permission'lar]
-                ⬇
-[Phase 4: Filter, Qidiruv, Pagination va N+1 Muammosi]
-                ⬇
-[Phase 5: Registration Tizimi va Race Condition]
-                ⬇
-[Phase 6: Tadbirdan Chiqish va Statuslar Logikasi]
-                ⬇
-[Phase 7: Telegram Bot va Deep Linking Integratsiyasi]
-                ⬇
-[Phase 8: Eslatmalar (Reminders) va Fondagi Vazifalar]
-                ⬇
-[Phase 9: Pytest bilan Avtomatik Testlash]
-                ⬇
-[Phase 10: Production, Xavfsizlik va Deployment]
+[1-Qadam: Gunicorn va WhiteNoise o'rnatish]
+                    ⬇
+[2-Qadam: settings.py ga Production sozlamalarini kiritish]
+                    ⬇
+[3-Qadam: .dockerignore faylini yaratish]
+                    ⬇
+[4-Qadam: Dockerfile faylini yaratish]
+                    ⬇
+[5-Qadam: docker-compose.yml faylini yaratish]
+                    ⬇
+[6-Qadam: .env faylini Docker va Production uchun to'g'rilash]
+                    ⬇
+[7-Qadam: Lokal Docker'da tekshirish (Test Run)]
+                    ⬇
+[8-Qadam: Git orqali Serverga yuklashga tayyorlash]
 ```
 
 ---
 
-## 1-BOSQICH: Muhitni sozlash, Loyiha arxitekturasi va Custom User modeli
+## 🛠 1-QADAM: Production Kutubxonalarini O'rnatish (Gunicorn va WhiteNoise)
 
-> **Mentor eslatmasi:**  
-> "Django bilan ishlashda eng katta va tuzatib bo'lmas xato — standart `auth.User` bilan `migrate` qilib yuborishdir! Standart userda email majburiy emas va username talab qilinadi. Biz boshidanoq `AbstractUser` orqali Custom User yaratdik."
+### ❓ Bu nima va nima uchun kerak?
+- **Gunicorn (Green Unicorn):** Django'ning `python manage.py runserver` buyrug'i faqat ishlab chiqish (development) uchun mo'ljallangan, u bir vaqtning o'zida ko'p foydalanuvchini ko'tara olmaydi. `gunicorn` esa productionda bir necha ishchi oqim (workers) ochib, minglab so'rovlarni barqaror qabul qiluvchi professional WSGI serverdir.
+- **WhiteNoise:** Django productionda (`DEBUG=False` bo'lganda) o'zining statik fayllarini (CSS, JavaScript, Jazzmin rasmlari) tarqatishni to'xtatadi. `whitenoise` Nginx'siz ham Djangoning o'zidan statik fayllarni siqilgan va keshlashtirilgan holda chaqmoqdek tez tarqatish imkonini beradi.
 
-### 🎯 Bu bosqichda nima ishlar qilinishi kerak?
+### 📝 Bajariladigan ish:
+Loyihangiz terminalida (`evently` papkasida) quyidagi buyruqni bering:
 
-- [x] **Virtual muhit va paketlarni o'rnatish:**
-  - 📁 **Qaysi fayllar:** `pyproject.toml`, `.venv/`
-  - 📝 **Nima qilinadi:** Terminalda `uv venv` orqali virtual muhit yaratiladi va `uv add django djangorestframework psycopg django-environ django-cors-headers drf-spectacular djangorestframework-simplejwt` o'rnatiladi.
-  - 💡 **Nega kerak (Izoh):** Loyihaning barcha tashqi kutubxonalari kompyuterdagi global Python muhitiga aralashmasdan, aynan shu loyiha uchun izolyatsiya qilingan holda saqlanadi.
+```bash
+uv add gunicorn whitenoise
+```
 
-- [x] **Kataloglar arxitekturasi (Apps strukturasi):**
-  - 📁 **Qaysi papka:** `apps/`, `apps/users/`
-  - 📝 **Nima qilinadi:** Barcha Django ilovalarini loyiha ildizida emas, alohida `apps/` papkasi ichida jamlash (`apps.users`).
-  - 💡 **Nega kerak (Izoh):** Kelajakda loyihada 10-15 ta ilova bo'lsa, fayllar chalkashib ketmasligi va arxitektura modulli (tartibli) bo'lishi uchun kerak.
-
-- [x] **Konfiguratsiya va `.env` integratsiyasi:**
-  - 📁 **Qaysi fayllarga:** `.env` va `config/settings.py`
-  - 📝 **Nima yoziladi:** `.env` da `SECRET_KEY`, `DEBUG`, `DATABASE_URL` yoziladi. `config/settings.py` da `environ.Env()` orqali ular o'qib olinadi.
-  - 💡 **Nega kerak (Izoh):** Maxfiy kalitlar, parollar va baza ma'lumotlari GitHub'ga ochiq chiqib ketmasligi va turli muhitlarda (local vs production) oson o'zgartirilishi uchun (12-Factor tamoyili).
-
-- [x] **Custom User modeli:**
-  - 📁 **Qaysi faylga:** `apps/users/models.py`
-  - 📝 **Nima yoziladi:** `User(AbstractUser)` modeli yaratiladi: `username = None`, `email = models.EmailField(unique=True)`, `role` (Admin/User), `phone_number`, `telegram_chat_id`, `telegram_link_token`. Shuningdek, email orqali user yaratuvchi `UserManager(BaseUserManager)` yoziladi.
-  - 💡 **Nega kerak (Izoh):** PostgreSQL ma'lumotlar bazasida foydalanuvchilar jadvali (`users_user`) yaratiladi. Foydalanuvchi tizimga username bilan emas, email bilan kirishi uchun aynan shu model poydevor hisoblanadi.
-
-- [x] **`AUTH_USER_MODEL` sozlamasi:**
-  - 📁 **Qaysi faylga:** `config/settings.py`
-  - 📝 **Nima yoziladi:** `AUTH_USER_MODEL = 'users.User'`
-  - 💡 **Nega kerak (Izoh):** Djangoga: "Eski standart User modelingni unut, bundan buyon `apps/users/models.py` dagi biz yozgan User modelini asosiy foydalanuvchi deb bilgin" deb uqtirish uchun.
-
-- [x] **Admin panel:**
-  - 📁 **Qaysi faylga:** `apps/users/admin.py`
-  - 📝 **Nima yoziladi:** `UserAdmin` klassi orqali yangi maydonlar (`role`, `phone_number`, `telegram_chat_id`) admin panelda ro'yxatga olinadi.
-  - 💡 **Nega kerak (Izoh):** Brauzer orqali `/admin/` paneliga kirilganda yangi qo'shilgan ustunlarni ko'rish va tahrirlash imkoniyati bo'lishi uchun.
-
-- [x] **Birinchi migratsiya va superuser:**
-  - 📁 **Qaysi fayllar:** `apps/users/migrations/0001_initial.py`, PostgreSQL bazasi
-  - 📝 **Nima qilinadi:** `python manage.py makemigrations` va `python manage.py migrate`. So'ngra `createsuperuser` bilan admin yaratiladi.
-  - 💡 **Nega kerak (Izoh):** Python kodida yozilgan modellar PostgreSQL ma'lumotlar bazasida haqiqiy jadvallar (SQL CREATE TABLE) ko'rinishida hosil bo'lishi uchun.
+*Eslatma: Agar serverda pip ishlatilsa, requirements.txt yangilanadi:*
+```bash
+uv pip compile pyproject.toml -o requirements.txt
+```
 
 ---
 
-## 2-BOSQICH: Autentifikatsiya (JWT), Profil va Swagger (API Hujjatlari)
+## ⚙️ 2-QADAM: `config/settings.py` Fayliga Production Sozlamalarini Kiritish
 
-> **Mentor eslatmasi:**  
-> "Biz REST API quryapmiz. Bu degani server sessiya (cookie session) saqlamaydi — u **Stateless** bo'lishi kerak. SimpleJWT yordamida foydalanuvchi login qilganda `access token` (har bir so'rovga qo'shib yuboriladigan kalit) va `refresh token` (yangi access olish uchun kalit) qaytaramiz."
+### ❓ Bu yerda nima o'zgaradi va nima uchun?
+1. **WhiteNoise Middleware:** Statik fayllarni tutib olib foydalanuvchiga uzatadi.
+2. **`STATIC_ROOT`:** `python manage.py collectstatic` buyrug'i barcha ilovalardagi CSS/JS fayllarni bitta papkaga yig'ishi uchun kerak.
+3. **`CSRF_TRUSTED_ORIGINS` va `CORS_ALLOWED_ORIGINS`:** Brauzerdan so'rov yuborilganda 403 Forbidden xatosi bermasligi uchun.
 
-### 🎯 Bu bosqichda nima ishlar qilinishi kerak?
+### 📝 Bajariladigan ish: `config/settings.py` fayliga quyidagi qismlarni qo'shing:
 
-- [ ] **DRF va SimpleJWT global sozlamalari:**
-  - 📁 **Qaysi faylga:** `config/settings.py`
-  - 📝 **Nima yoziladi:**
-    ```python
-    REST_FRAMEWORK = {
-        'DEFAULT_AUTHENTICATION_CLASSES': (
-            'rest_framework_simplejwt.authentication.JWTAuthentication',
-        ),
-        'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
-    }
-    SIMPLE_JWT = {
-        'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
-        'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
-    }
-    ```
-  - 💡 **Nega kerak (Izoh):** Django REST Framework barcha kelayotgan so'rovlarni avtomatik ravishda JWT token orqali tekshirishini va tokenlarning qancha vaqt yashashini belgilash uchun.
+#### 1) `MIDDLEWARE` ga WhiteNoise qo'shish:
+`SecurityMiddleware` dan keyin darhol WhiteNoise middleware'ini joylashtiring:
 
-- [X] **Foydalanuvchi ro'yxatdan o'tishi (Register Serializer):**
-  - 📁 **Qaysi faylga:** `apps/users/serializers.py`
-  - 📝 **Nima yoziladi:** `UserRegisterSerializer` klassi:
-    - Maydonlar: `email`, `first_name`, `last_name`, `phone_number`, `password`, `password_confirm`.
-    - `validate()` metodi: ikkala parol bir xilligini va xavfsizlik talablariga mosligini tekshiradi.
-    - `create()` metodi: `User.objects.create_user()` orqali parolni hashlab yangi user yaratadi. Parollar `write_only=True` qilinadi.
-  - 💡 **Nega kerak (Izoh):** Foydalanuvchi yuborgan xom JSON ma'lumotlarini qabul qilib, ularning to'g'riligini tekshirish (validatsiya) va bazaga xavfsiz saqlash uchun.
+```python
+MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
+    'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # <-- SHU YERGA QO'SHILADI!
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+```
 
-- [ ] **Ro'yxatdan o'tish ko'rinishi (Register View):**
-  - 📁 **Qaysi faylga:** `apps/users/views.py`
-  - 📝 **Nima yoziladi:** `RegisterView(generics.CreateAPIView)`:
-    - `serializer_class = UserRegisterSerializer`
-    - `permission_classes = [AllowAny]`
-  - 💡 **Nega kerak (Izoh):** Frontend yoki mijozdan kelgan HTTP `POST` so'rovini kutib olib, serializer orqali bazada yangi foydalanuvchi yaratadi va `201 Created` javobini qaytaradi.
+#### 2) Statik va Media sozlamalarini to'ldirish:
+Faylning `STATIC_URL = 'static/'` qismini topib, quyidagicha to'ldiring:
 
-- [ ] **Login va Token olish (Login & Refresh):**
-  - 📁 **Qaysi fayllarga:** `apps/users/serializers.py` va `apps/users/views.py`
-  - 📝 **Nima yoziladi:** `CustomTokenObtainPairSerializer` (agar tokenga foydalanuvchi roli yoki ismi qo'shilishi kerak bo'lsa) hamda SimpleJWT ning `TokenObtainPairView` va `TokenRefreshView` lari.
-  - 💡 **Nega kerak (Izoh):** Foydalanuvchi o'zining `email` va `password` ini yuborganda, tizim unga tizimga kirish huquqini beruvchi `access` va `refresh` tokenlarni berishi uchun.
+```python
+# Static files (CSS, JavaScript, Images)
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-- [ ] **Profil ko'rish va tahrirlash (`/auth/me/`):**
-  - 📁 **Qaysi fayllarga:**
-    1. `apps/users/serializers.py` — `UserProfileSerializer`: foydalanuvchining shaxsiy ma'lumotlarini JSON formatga o'giradi va yangilash imkonini beradi.
-    2. `apps/users/views.py` — `UserProfileView(generics.RetrieveUpdateAPIView)`: `permission_classes = [IsAuthenticated]`, `get_object()` metodi orqali aynan so'rov yuborgan `self.request.user` ni qaytaradi.
-  - 💡 **Nega kerak (Izoh):** Tizimga kirgan foydalanuvchi o'z ma'lumotlarini (ism, familiya, telefon) ko'rishi va tahrirlashi uchun. Begonalar bu ma'lumotlarni ko'ra olmaydi.
+# WhiteNoise statik fayllarni siqish va xotirada keshlashtirish
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
-- [ ] **Foydalanuvchi URL marshrutlari:**
-  - 📁 **Qaysi faylga:** `apps/users/urls.py` [YANGI FAYL]
-  - 📝 **Nima yoziladi:**
-    - `path('register/', RegisterView.as_view(), name='register')`
-    - `path('login/', TokenObtainPairView.as_view(), name='login')`
-    - `path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh')`
-    - `path('me/', UserProfileView.as_view(), name='profile')`
-  - 💡 **Nega kerak (Izoh):** API endpointlarini (manzillarini) mos view'larga bog'lash uchun.
+# Media fayllar (Tadbirlar rasmlari, foydalanuvchilar yuklagan fayllar)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+```
 
-- [ ] **Swagger UI va Redoc integratsiyasi:**
-  - 📁 **Qaysi fayllarga:** `config/settings.py` va `config/urls.py`
-  - 📝 **Nima yoziladi:**
-    - `INSTALLED_APPS` ga `'drf_spectacular'` qo'shish.
-    - `config/urls.py` ga `SpectacularAPIView`, `SpectacularSwaggerView.as_view(url_name='schema')` va `SpectacularRedocView.as_view(url_name='schemas')` ni ulash.
-    - `config/urls.py` ga `path('api/v1/auth/', include('apps.users.urls'))` ni ulash.
-  - 💡 **Nega kerak (Izoh):** Brauzer orqali `/api/docs/` manziliga kirib, yaratilgan barcha API'larni qulay interfeysda ko'rish, "Authorize" tugmasi orqali token kiritib, API'larni test qilish uchun.
+#### 3) Xavfsizlik, CSRF va CORS sozlamalari:
+`ALLOWED_HOSTS` pastiga quyidagi sozlamalarni qo'shing:
+
+```python
+ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["*"])
+
+# HTTPS/Nginx orqasida to'g'ri ishlashi uchun:
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# CSRF ruxsat berilgan domenlar
+CSRF_TRUSTED_ORIGINS = env.list(
+    "CSRF_TRUSTED_ORIGINS", 
+    default=["http://localhost:8000", "http://127.0.0.1"]
+)
+
+# CORS sozlamasi (Frontend so'rovlariga ruxsat)
+CORS_ALLOWED_ORIGINS = env.list(
+    "CORS_ALLOWED_ORIGINS",
+    default=["http://localhost:3000", "http://localhost:5173"]
+)
+```
 
 ---
 
-## 3-BOSQICH: Tadbirlar (Events) Moduli, CRUD va Maxsus Huquqlar (Permissions)
+## 🚫 3-QADAM: `.dockerignore` Faylini Yaratish
 
-> **Mentor eslatmasi:**  
-> "Ushbu bosqichda asosiy biznes obyektimiz — Tadbirlar (Events) yaratiladi. Bu yerda kim nima qila olishi muhim: oddiy foydalanuvchi tadbirlarni faqat ko'ra oladi (`GET`), lekin yangi tadbir yaratish, uni o'zgartirish yoki o'chirish faqat **Admin** larga ruxsat etiladi."
+### ❓ Bu nima va nima uchun kerak?
+Docker image qurilayotganda kompyuterdagi `.venv` (virtual muhit), `.git`, kesh fayllar (`__pycache__`) va lokal `.env` konteyner ichiga ko'chib o'tib ketmasligi kerak. Aks holda image hajmi juda kattalashib ketadi va xatolar keltirib chiqaradi.
 
-### 🎯 Bu bosqichda nima ishlar qilinishi kerak?
+### 📝 Bajariladigan ish:
+Loyiha ildizida (`C:\Users\User\summer_python2026\Project-evently\evently\.dockerignore`) fayl oching va quyidagi kodni yozing:
 
-- [ ] **Yangi ilova yaratish (`apps/events`):**
-  - 📁 **Qaysi papka:** `apps/events/`
-  - 📝 **Nima qilinadi:** Terminalda: `python manage.py startapp events apps/events` va `config/settings.py` dagi `INSTALLED_APPS` ga `'apps.events'` ni kiritish.
-  - 💡 **Nega kerak (Izoh):** Tadbirlar bilan bog'liq barcha mantiqni o'zida saqlovchi mustaqil modul yaratish uchun.
-
-- [ ] **Event modeli:**
-  - 📁 **Qaysi faylga:** `apps/events/models.py`
-  - 📝 **Nima yoziladi:** `Event` klassi:
-    - `title = models.CharField(max_length=255)`
-    - `description = models.TextField()`
-    - `date = models.DateTimeField()` (tadbirlar o'tkazilish sanasi)
-    - `location = models.CharField(max_length=255)`
-    - `capacity = models.PositiveIntegerField()` (maksimal sig'im)
-    - `status = models.CharField(choices=EventStatus.choices, default=EventStatus.OPEN)` (open, full, cancelled, completed)
-    - `created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='events')`
-    - `created_at = models.DateTimeField(auto_now_add=True)`
-    - `updated_at = models.DateTimeField(auto_now=True)`
-  - 💡 **Nega kerak (Izoh):** PostgreSQL bazasida tadbirlar saqlanadigan `events_event` jadvalini yaratish uchun.
-
-- [ ] **Tadbir sanasi va sig'imi validatsiyasi:**
-  - 📁 **Qaysi faylga:** `apps/events/serializers.py` [YANGI FAYL]
-  - 📝 **Nima yoziladi:** `EventSerializer(serializers.ModelSerializer)`:
-    - `validate_date()`: Tadbir sanasi hozirgi vaqtdan kelajakda bo'lishini tekshiradi (`value > timezone.now()`). O'tib ketgan sana kiritilsa xato beradi.
-    - `validate_capacity()`: Sig'im kamida 1 bo'lishini tekshiradi.
-  - 💡 **Nega kerak (Izoh):** O'tmishdagi sanaga tadbir yaratilishining oldini oladi va xato kiritilgan ma'lumotlarni bazaga yetib bormasdan to'xtatadi.
-
-- [ ] **Maxsus Huquq (Custom Permission):**
-  - 📁 **Qaysi faylga:** `apps/events/permissions.py` [YANGI FAYL]
-  - 📝 **Nima yoziladi:** `IsAdminOrReadOnly(permissions.BasePermission)` klassi:
-    - `has_permission()` metodi: Agar so'rov `GET`, `HEAD`, `OPTIONS` (xavfsiz amallar) bo'lsa — barchaga ruxsat beradi.
-    - Agar `POST`, `PUT`, `PATCH`, `DELETE` bo'lsa — faqat `request.user.role == 'admin'` yoki `is_staff=True` bo'lgan foydalanuvchilarga ruxsat beradi.
-  - 💡 **Nega kerak (Izoh):** Oddiy qatnashchilar tadbir yaratib yoki boshqa tadbirlarni o'chirib yubormasligi uchun API darajasidagi xavfsizlik filtri.
-
-- [ ] **Events CRUD ko'rinishi (ViewSet):**
-  - 📁 **Qaysi faylga:** `apps/events/views.py`
-  - 📝 **Nima yoziladi:** `EventViewSet(viewsets.ModelViewSet)`:
-    - `queryset = Event.objects.all()`
-    - `serializer_class = EventSerializer`
-    - `permission_classes = [IsAdminOrReadOnly]`
-    - `perform_create(serializer)`: Tadbir yaratilayotganda `created_by=self.request.user` qilib avtomatik tashkilotchini biriktiradi.
-  - 💡 **Nega kerak (Izoh):** Bitta klass orqali ro'yxatni olish (`GET /events/`), bitta tadbirni ko'rish (`GET /events/{id}/`), yangi yaratish (`POST`), o'zgartirish (`PUT/PATCH`) va o'chirish (`DELETE`) amallarini ta'minlash uchun.
-
-- [ ] **Events URL marshrutlari:**
-  - 📁 **Qaysi fayllarga:** `apps/events/urls.py` [YANGI FAYL] va `config/urls.py`
-  - 📝 **Nima yoziladi:** `DefaultRouter` yaratib, unga `router.register('events', EventViewSet)` ni ro'yxatdan o'tkazish. `config/urls.py` da `path('api/v1/', include('apps.events.urls'))` ulash.
-  - 💡 **Nega kerak (Izoh):** Barcha CRUD marshrutlarini bitta router orqali avtomatik hosil qilish uchun.
-
-- [ ] **Migratsiyalarni bajarish:**
-  - 📁 **Qaysi papka:** `apps/events/migrations/`
-  - 📝 **Nima qilinadi:** `python manage.py makemigrations events` va `python manage.py migrate`.
-  - 💡 **Nega kerak (Izoh):** Yangi `Event` modelini PostgreSQL ma'lumotlar bazasida jadval sifatida yaratish uchun.
+```text
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.git/
+.gitignore
+.env
+.pytest_cache/
+tests/
+Dockerfile
+docker-compose.yml
+plan.md
+plan01.md
+postman/
+*.log
+```
 
 ---
 
-## 4-BOSQICH: Qidiruv, Filtrlash, Pagination va Query Optimizatsiyasi (N+1 Muammosi)
+## 📦 4-QADAM: `Dockerfile` Faylini Yaratish
 
-> **Mentor eslatmasi:**  
-> "Bazada 10 000 ta tadbir bo'lsa, ularni birdaniga olib kelish serverni o'ldiradi. Shuning uchun sahifalash (Pagination) kerak. Shuningdek, har bir tadbir bilan uning tashkilotchisini tortib olishda N+1 ta so'rov ketmasligi uchun `select_related` ishlatamiz."
+### ❓ Bu nima va nima uchun kerak?
+`Dockerfile` — bu bizning dasturimiz uchun operatsion tizim (Linux Debian), Python 3.11, `uv` paket menejeri va dasturning barcha kutubxonalarini avtomat tarzda qadamma-qadam o'rnatib beruvchi retsept/instruksiya faylidir.
 
-### 🎯 Bu bosqichda nima ishlar qilinishi kerak?
+### 📝 Bajariladigan ish:
+Loyiha ildizida (`evently/Dockerfile`) fayl yarating va quyidagi to'liq kodni yozing:
 
-- [ ] **Pagination sozlamalari (Sahifalash):**
-  - 📁 **Qaysi faylga:** `config/settings.py` (yoki `apps/common/pagination.py`)
-  - 📝 **Nima yoziladi:**
-    ```python
-    REST_FRAMEWORK['DEFAULT_PAGINATION_CLASS'] = 'rest_framework.pagination.PageNumberPagination'
-    REST_FRAMEWORK['PAGE_SIZE'] = 10
-    ```
-  - 💡 **Nega kerak (Izoh):** API har bir chaqirilganda maksimal 10 ta tadbir qaytarishi, qolganlarini `page=2`, `page=3` deb sahifalab olish imkonini berishi uchun.
+```dockerfile
+# 1. Yengil va xavfsiz rasmiy Python 3.11 bazaviy obrazi
+FROM python:3.11-slim
 
-- [ ] **Filter klassini yaratish:**
-  - 📁 **Qaysi faylga:** `apps/events/filters.py` [YANGI FAYL]
-  - 📝 **Nima yoziladi:** `EventFilter(django_filters.FilterSet)`:
-    - Sana oralig'i: `date_from = DateTimeFilter(field_name='date', lookup_expr='gte')`, `date_to = DateTimeFilter(field_name='date', lookup_expr='lte')`
-    - Status: `status = ChoiceFilter(choices=EventStatus.choices)`
-  - 💡 **Nega kerak (Izoh):** Foydalanuvchilar `/api/v1/events/?status=open&date_from=2026-12-01` ko'rinishida parametrlarga qarab saralashi uchun.
+# 2. Python muhit o'zgaruvchilari (Kesh yozmaslik va loglarni tezkor chiqarish)
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive
 
-- [ ] **Qidiruv, tartiblash va filterni View'ga ulash:**
-  - 📁 **Qaysi faylga:** `apps/events/views.py`
-  - 📝 **Nima yoziladi:**
-    - `filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]`
-    - `filterset_class = EventFilter`
-    - `search_fields = ['title', 'description']` (nomi va matni bo'yicha qidiruv)
-    - `ordering_fields = ['date', 'created_at']`
-  - 💡 **Nega kerak (Izoh):** DRF view'da bir vaqtning o'zida qidiruv (`?search=python`), tartiblash (`?ordering=date`) va filtrlarni ishga tushirish uchun.
+# 3. Konteyner ichidagi asosiy ishchi papka
+WORKDIR /app
 
-- [ ] **SQL Query Optimizatsiyasi (N+1 ni yo'qotish va bo'sh joylarni sanash):**
-  - 📁 **Qaysi faylga:** `apps/events/views.py`
-  - 📝 **Nima yoziladi:** `get_queryset()` metodida:
-    ```python
-    return Event.objects.select_related('created_by') \
-        .annotate(registered_count=Count('registrations', filter=Q(registrations__status='confirmed')))
-    ```
-  - 💡 **Nega kerak (Izoh):** `select_related('created_by')` orqali tashkilotchi ma'lumotlari bitta SQL JOIN bilan olinadi (100 ta alohida so'rov ketmaydi). `annotate` orqali esa ro'yxatdan o'tganlar soni Python siklida emas, to'g'ridan-to'g'ri PostgreSQL bazasi darajasida tezkor hisoblanadi.
+# 4. Tizim darajasidagi PostgreSQL drayveri va kerakli utilitalarni o'rnatish
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-- [ ] **Bo'sh joylarni Serializer'da ko'rsatish:**
-  - 📁 **Qaysi faylga:** `apps/events/serializers.py`
-  - 📝 **Nima yoziladi:** Serializer'ga `registered_count` va `available_seats = serializers.SerializerMethodField()` qo'shiladi:
-    ```python
-    def get_available_seats(self, obj):
-        count = getattr(obj, 'registered_count', 0)
-        return max(0, obj.capacity - count)
-    ```
-  - 💡 **Nega kerak (Izoh):** Frontend qatnashchiga necha dona bo'sh o'rin qolganini real vaqtda ko'rsatib turishi uchun.
+# 5. Yuqori tezlikdagi uv paket menejerini ko'chirib olish
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
+# 6. Bog'liqlik fayllarini nusxalash (Keshlanishni optimallashtirish uchun)
+COPY pyproject.toml uv.lock ./
+
+# 7. Paketlarni tizim muhitiga to'liq o'rnatish (gunicorn va whitenoise bilan birga)
+RUN uv pip install --system --no-cache -r pyproject.toml gunicorn whitenoise
+
+# 8. Loyihaning barcha fayllarini konteynerga nusxalash
+COPY . .
+
+# 9. Statik va Media fayllar uchun papkalar yaratish
+RUN mkdir -p /app/staticfiles /app/media
+
+# 10. Web portni ochish
+EXPOSE 8000
+
+# 11. Standart ishga tushirish buyrug'i (3 ta ishchi oqim bilan Gunicorn)
+CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3"]
+```
 
 ---
 
-## 5-BOSQICH: Ro'yxatdan o'tish (Registration) Tizimi va Race Condition Muammosi
+## 🚢 5-QADAM: `docker-compose.yml` Faylini Yaratish
 
-> **Mentor eslatmasi:**  
-> "Tadbirda atigi 1 ta joy qolganda 10 kishi birdaniga ariza bersa, oddiy tekshiruv ish bermaydi va 1 ta joyga 10 kishi yozilib ketadi (Race Condition). Buni yechish uchun biz `transaction.atomic()` va PostgreSQL darajasida qatorni qulflash — `select_for_update()` dan foydalanamiz."
+### ❓ Bu nima va nima uchun kerak?
+Bizning loyihamizda 3 ta mustaqil xizmat bor:
+1. **`db`**: PostgreSQL ma'lumotlar bazasi;
+2. **`web`**: Django REST API + Jazzmin Admin paneli (Gunicorn orqali);
+3. **`bot`**: Aiogram Telegram Boti (`python -m bot.main`).
 
-### 🎯 Bu bosqichda nima ishlar qilinishi kerak?
+`docker-compose.yml` fayli ushbu 3 ta xizmatni bitta umumiy tarmoqqa (`evently_network`) birlashtiradi, ularni bir-biri bilan bog'laydi va bitta `docker compose up` buyrug'i bilan bir vaqtda ishga tushirish imkonini beradi.
 
-- [ ] **Yangi ilova yaratish (`apps/registrations`):**
-  - 📁 **Qaysi papka:** `apps/registrations/`
-  - 📝 **Nima qilinadi:** Terminalda: `python manage.py startapp registrations apps/registrations` va `settings.py` ga qo'shish.
-  - 💡 **Nega kerak (Izoh):** Ro'yxatdan o'tishlar va chiptalar tarixini alohida toza modulda yuritish uchun.
+### 📝 Bajariladigan ish:
+Loyiha ildizida (`evently/docker-compose.yml`) fayl yarating va quyidagi to'liq kodni yozing:
 
-- [ ] **Registration modeli va Constraint:**
-  - 📁 **Qaysi faylga:** `apps/registrations/models.py`
-  - 📝 **Nima yoziladi:** `Registration` modeli:
-    - `user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='registrations')`
-    - `event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='registrations')`
-    - `status = models.CharField(choices=RegistrationStatus.choices, default=RegistrationStatus.CONFIRMED)` (confirmed, cancelled)
-    - `registered_at = models.DateTimeField(auto_now_add=True)`
-    - `reminder_sent = models.BooleanField(default=False)`
-    - Meta qismida: `models.UniqueConstraint(fields=['user', 'event'], name='unique_active_user_event_registration')`
-  - 💡 **Nega kerak (Izoh):** PostgreSQL bazasida qatnashuvchilar jadvali yaratiladi va ma'lumotlar bazasi darajasida bitta odam bitta tadbirga bir vaqtda faqat bir marta yozilishi kafolatlanadi.
+```yaml
+version: '3.8'
 
-- [ ] **Race Condition'ni yenguvchi Biznes Servis (Service Layer):**
-  - 📁 **Qaysi faylga:** `apps/registrations/services.py` [YANGI FAYL]
-  - 📝 **Nima yoziladi:** `register_user_to_event(user, event_id)` funksiyasi:
-    - `@transaction.atomic` dekoratori orqali tranzaksiyaga olinadi.
-    - `event = Event.objects.select_for_update().get(id=event_id)` orqali bazadagi tadbir qatori qulflanadi.
-    - Joriy aktiv ro'yxatdan o'tganlar soni sanaladi: `confirmed_count = event.registrations.filter(status='confirmed').count()`.
-    - Agar `confirmed_count >= event.capacity` bo'lsa: `event.status = 'full'`, saqlanadi va `ValidationError("Bo'sh joy qolmagan!")` tashlanadi.
-    - Joy bo'lsa: `Registration.objects.create(user=user, event=event)` qilinadi.
-  - 💡 **Nega kerak (Izoh):** Bir soniyada 100 ta so'rov kelsa ham, PostgreSQL ularni birma-bir navbatga qo'yadi. Birinchi odam o'rinni egallagach, keyingilari 'joy qolmagan' xatosini oladi. Ortiqcha odam yozilishi mutlaqo imkonsiz bo'ladi.
+services:
+  # ==========================================
+  # 1. POSTGRESQL MA'LUMOTLAR BAZASI
+  # ==========================================
+  db:
+    image: postgres:16-alpine
+    container_name: evently_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME:-evently_db}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres_password_123}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - evently_network
 
-- [ ] **Registration Serializer va View:**
-  - 📁 **Qaysi fayllarga:** `apps/registrations/serializers.py` va `apps/registrations/views.py`
-  - 📝 **Nima yoziladi:**
-    - `RegistrationCreateView(APIView)`: `permission_classes = [IsAuthenticated]`. `POST /api/v1/events/{id}/register/` so'rovida `register_user_to_event` servis funksiyasini chaqiradi.
-  - 💡 **Nega kerak (Izoh):** API orqali autentifikatsiyadan o'tgan foydalanuvchilarning so'rovlarini qabul qilib, ularni servisga uzatish uchun.
+  # ==========================================
+  # 2. DJANGO WEB API & JAZZMIN ADMIN
+  # ==========================================
+  web:
+    build: .
+    container_name: evently_web
+    restart: always
+    command: >
+      sh -c "python manage.py collectstatic --noinput &&
+             python manage.py migrate &&
+             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
+    volumes:
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DEBUG=False
+    depends_on:
+      - db
+    networks:
+      - evently_network
 
-- [ ] **Migratsiyalarni bajarish:**
-  - 📁 **Qaysi papka:** `apps/registrations/migrations/`
-  - 📝 **Nima qilinadi:** `python manage.py makemigrations registrations` va `python manage.py migrate`.
-  - 💡 **Nega kerak (Izoh):** Bazada `registrations_registration` jadvali va unikal indekslarni hosil qilish uchun.
+  # ==========================================
+  # 3. AIOGRAM TELEGRAM BOT
+  # ==========================================
+  bot:
+    build: .
+    container_name: evently_bot
+    restart: always
+    command: python -m bot.main
+    env_file:
+      - .env
+    environment:
+      # Bot backendga konteyner ichki tarmog'i orqali ulanadi:
+      - BACKEND_API_URL=http://web:8000/api/v1
+    depends_on:
+      - web
+    networks:
+      - evently_network
 
----
+# Volume'lar (Ma'lumotlar saqlanib qolishi uchun)
+volumes:
+  postgres_data:
+  static_volume:
+  media_volume:
 
-## 6-BOSQICH: Tadbirdan Chiqish, Shaxsiy Ro'yxatlar va Tadbirni Yopish
-
-> **Mentor eslatmasi:**  
-> "Odamlar rejalari o'zgarganda tadbirdan chiqib keta olishi kerak. Lekin bazadan butunlay o'chirib yuborish (Hard delete) tavsiya etilmaydi — statusni `cancelled` ga o'tkazish (Soft delete) orqali tarixni saqlaymiz va bo'shagan o'rinni darhol qayta ochamiz."
-
-### 🎯 Bu bosqichda nima ishlar qilinishi kerak?
-
-- [ ] **Tadbirdan chiqish (Cancel Registration API):**
-  - 📁 **Qaysi fayllarga:** `apps/registrations/services.py` va `apps/registrations/views.py`
-  - 📝 **Nima yoziladi:**
-    - Servisda: `cancel_registration(user, registration_id)` funksiyasi. Ariza egasi ekanligini tekshiradi, tadbir sanasi o'tib ketmagan bo'lishini tekshiradi.
-    - Statusni `cancelled` ga o'tkazadi.
-    - Agar tadbir `status == 'full'` bo'lib turgan bo'lsa, o'rin bo'shagani sababli uni yana qayta `status = 'open'` holatiga o'tkazadi.
-    - View'da: `POST /api/v1/registrations/{id}/cancel/` endpointi.
-  - 💡 **Nega kerak (Izoh):** Qatnashchi bormoqchi bo'lmasa joyini bo'shatishi va boshqa odamlar yana ro'yxatdan o'tishi imkoniyati paydo bo'lishi uchun.
-
-- [ ] **Mening arizalarim ro'yxati (`/registrations/my/`):**
-  - 📁 **Qaysi fayllarga:** `apps/registrations/views.py` va `apps/registrations/serializers.py`
-  - 📝 **Nima yoziladi:** `MyRegistrationsListView(generics.ListAPIView)`:
-    - `permission_classes = [IsAuthenticated]`
-    - `get_queryset()`: Faqat `request.user` ning arizalarini (`Registration.objects.filter(user=request.user)`) qaytaradi.
-    - Serializer ichida tadbirning barcha ma'lumotlari (`EventSerializer`) birga ko'rsatiladi.
-  - 💡 **Nega kerak (Izoh):** Har bir foydalanuvchi faqat o'zi qatnashayotgan tadbirlar chiptalarini ko'rishi uchun.
-
-- [ ] **Admin tomonidan tadbirni muddatidan oldin yopish:**
-  - 📁 **Qaysi faylga:** `apps/events/views.py`
-  - 📝 **Nima yoziladi:** `EventViewSet` ga `@action(detail=True, methods=['post'], permission_classes=[IsAdminUserRole])` qo'shish (`/api/v1/events/{id}/close/`):
-    - Tadbir statusini `cancelled` yoki `completed` ga o'zgartiradi.
-  - 💡 **Nega kerak (Izoh):** Tashkilotchi tadbirni bekor qilganda yoki to'xtatganda unga boshqa hech kim yozila olmasligini ta'minlash uchun.
-
----
-
-## 7-BOSQICH: Telegram Bot Integratsiyasi va Xabarnomalar (apps/notifications va bot/)
-
-> **Mentor eslatmasi:**  
-> "Telegram bot — bu Django ichida emas, alohida mustaqil ishlovchi asinxron mikroxizmat. U bazaga to'g'ridan-to'g'ri kirmaydi, balki biz yaratgan REST API bilan `api_client.py` orqali aloqa qiladi. Saytdagi akkauntni botga bog'lash esa xavfsiz bir martalik Deep-link token orqali bajariladi. Backend tomonda esa Telegram bilan bog'liq barcha mantiq (servislar, endpointlar, URLlar va testlar) toza **`apps/notifications`** ilovasida jamlanadi."
-
-### 🎯 Bu bosqichda nima ishlar qilinishi kerak?
-
-- [ ] **Kataloglar strukturasi va yangi ilova yaratish (`apps/notifications`):**
-  - 📁 **Qaysi papka/fayllarga:** `apps/notifications/apps.py` va `config/settings.py`
-  - 📝 **Nima qilinadi:** Terminalda: `python manage.py startapp notifications apps/notifications` bajariladi. `apps/notifications/apps.py` da `name = 'apps.notifications'` sozlanadi va `config/settings.py` dagi `INSTALLED_APPS` ro'yxatiga `'apps.notifications'` qo'shiladi.
-  - 💡 **Nega kerak (Izoh):** Telegram bot va xabarnomalar bilan bog'liq barcha Backend xizmatlarini `users` yoki `events` ga aralashtirmasdan, modulli arxitektura asosida mustaqil ilova ichida toza boshqarish uchun.
-
-- [ ] **Telegram Xabarnoma Servislari (Service Layer):**
-  - 📁 **Qaysi faylga:** `apps/notifications/services.py` [YANGI FAYL]
-  - 📝 **Nima yoziladi:**
-    - `send_telegram_message(chat_id: int, text: str)`: `httpx` orqali Telegram Bot API (`https://api.telegram.org/bot<TOKEN>/sendMessage`) ga HTML formatida xabar yuboruvchi yagona funksiya.
-    - `notify_registration_success(registration)`: Foydalanuvchi tadbirga muvaffaqiyatli yozilganda `transaction.on_commit()` orqali uning Telegramiga chipta ma'lumotlari bilan tasdiq xabarnomasini yo'llovchi servis.
-  - 💡 **Nega kerak (Izoh):** Backenddan Telegramga xabar yuborish mantiqini bitta toza funksiyada markazlashtirish uchun. Ushbu servis ham tadbirga yozilishda, ham 8-bosqichdagi 24 soatlik avtomatik eslatmalarda bevosita qayta ishlatiladi (DRY prinsipi).
-
-- [ ] **Backendda bir martalik bog'lash tokeni yaratish View:**
-  - 📁 **Qaysi faylga:** `apps/notifications/views.py` [YANGI FAYL]
-  - 📝 **Nima yoziladi:** `TelegramLinkGenerateView(APIView)`:
-    - `permission_classes = [IsAuthenticated]`
-    - `token = secrets.token_urlsafe(32)` generatsiya qilib, `request.user.telegram_link_token` maydoniga saqlaydi.
-    - Foydalanuvchiga bot havolasini qaytaradi: `https://t.me/<bot_username>?start={token}`.
-  - 💡 **Nega kerak (Izoh):** Foydalanuvchi saytdagi "Telegram bilan bog'lash" tugmasini bosganda uning akkauntini botga aniq va begonalarsiz bog'laydigan xavfsiz Deep-link havolasini generatsiya qilish uchun.
-
-- [ ] **Backendda Bot uchun Maxfiy Tasdiqlash (Confirm) Endpointi:**
-  - 📁 **Qaysi faylga:** `apps/notifications/views.py`
-  - 📝 **Nima yoziladi:** `TelegramConfirmView(APIView)`:
-    - Xavfsizlik: So'rov header'ida `X-Bot-Secret` tekshiriladi (agar kalit to'g'ri bo'lmasa `403 Forbidden`).
-    - Body'dan `token` va `chat_id` olinadi.
-    - Berilgan token bo'yicha foydalanuvchi topiladi, uning `telegram_chat_id` siga yoziladi va `telegram_link_token = None` qilinadi (token yoqib yuboriladi).
-  - 💡 **Nega kerak (Izoh):** Bot foydalanuvchining Telegram chat ID raqamini Django ma'lumotlar bazasidagi User jadvaliga yozib qo'yishi uchun. Token bir marta ishlatilgach yo'q qilinishi begona urinishlarning oldini oladi.
-
-- [ ] **Backendda Bot uchun Shaxsiy Tadbirlarni Olish Endpointi:**
-  - 📁 **Qaysi faylga:** `apps/notifications/views.py`
-  - 📝 **Nima yoziladi:** `TelegramUserEventsView(APIView)`:
-    - Xavfsizlik: So'rov header'ida `X-Bot-Secret` tekshiriladi.
-    - Body'dan `chat_id` olinadi va ushbu foydalanuvchining aktiv (`confirmed`) ro'yxatdan o'tgan tadbirlari bazadan tortib olinadi.
-    - Tadbirlar ro'yxatini JSON formatida qaytaradi.
-  - 💡 **Nega kerak (Izoh):** Telegram bot `/my_events` buyrug'i kelganda backenddan foydalanuvchining barcha chiptalari va tadbirlari ro'yxatini xavfsiz so'rab olishi uchun.
-
-- [ ] **Notifications URL marshrutlari:**
-  - 📁 **Qaysi fayllarga:** `apps/notifications/urls.py` [YANGI FAYL] va `config/urls.py`
-  - 📝 **Nima yoziladi:**
-    - `apps/notifications/urls.py`:
-      - `path('telegram/link/', TelegramLinkGenerateView.as_view(), name='telegram_link')`
-      - `path('telegram/confirm/', TelegramConfirmView.as_view(), name='telegram_confirm')`
-      - `path('telegram/my-events/', TelegramUserEventsView.as_view(), name='telegram_my_events')`
-    - `config/urls.py` ga `path('api/v1/notifications/', include('apps.notifications.urls'))` ni ulash.
-  - 💡 **Nega kerak (Izoh):** Yaratilgan Telegram API endpointlarini umumiy loyiha marshrut tizimiga toza prefiks bilan bog'lash uchun.
-
-- [ ] **Notifications Unit Testlari:**
-  - 📁 **Qaysi papka/faylga:** `apps/notifications/tests/test_telegram_api.py` [YANGI PAPKA VA FAYL]
-  - 📝 **Nima yoziladi:**
-    - Autentifikatsiyasiz havola olmoqchi bo'lganda `401 Unauthorized` testi.
-    - Avtorizatsiyadan o'tgan userga token berilishi va bazada saqlanishi testi (`200 OK`).
-    - `X-Bot-Secret` siz yoki noto'g'ri maxfiy kalit kelganda `403 Forbidden` testi.
-    - To'g'ri token va `chat_id` bilan `/confirm/` chaqirilganda `telegram_chat_id` saqlanishi va token o'chirilishi testi.
-  - 💡 **Nega kerak (Izoh):** Akkauntni bog'lash mexanizmi va xavfsizlik filtrlari sinmasligini avtomatlashtirilgan testlar orqali kafolatlash uchun.
-
-- [ ] **Aiogram 3 da Bot Konfiguratsiyasi:**
-  - 📁 **Qaysi faylga:** `bot/config.py` [YANGI FAYL]
-  - 📝 **Nima yoziladi:** `.env` faylidan `TELEGRAM_BOT_TOKEN`, `BOT_API_SECRET` va `BACKEND_API_URL` ni xavfsiz o'qib oluvchi modul.
-  - 💡 **Nega kerak (Izoh):** Bot mustaqil mikroxizmat bo'lib ishlaganda barcha parollar va backend URL manzillarini tashqi muhit o'zgaruvchilaridan xavfsiz olishi uchun.
-
-- [ ] **Aiogram 3 da Backend API Mijozi (API Client):**
-  - 📁 **Qaysi faylga:** `bot/api_client.py` [YANGI FAYL]
-  - 📝 **Nima yoziladi:** `BackendAPIClient` klassi:
-    - `confirm_telegram_account(token, chat_id)`: Backendning `/notifications/telegram/confirm/` endpointiga `X-Bot-Secret` sarlavhasi bilan asinxron HTTP so'rov yuborish.
-    - `get_user_events(chat_id)`: Backendning `/notifications/telegram/my-events/` endpointiga so'rov yuborib faol tadbirlar ro'yxatini olish.
-  - 💡 **Nega kerak (Izoh):** Bot handlerlari ichida xom `httpx` so'rovlari va sarlavhalarni takrorlamasdan, butun tarmoq aloqasini alohida servis (API client layer) orqali toza boshqarish uchun.
-
-- [ ] **Aiogram 3 da Buyruq va Xabar Handlerlari:**
-  - 📁 **Qaysi faylga:** `bot/handlers.py` [YANGI FAYL]
-  - 📝 **Nima yoziladi:**
-    - `/start` va `/start <token>` handler'i: kelgan deep-link tokenni `api_client.confirm_telegram_account` orqali tekshirish. Muvaffaqiyatli bo'lsa tabrik xabari, xato bo'lsa yo'naltiruvchi javob berish.
-    - `/my_events` handler'i: `api_client.get_user_events` orqali tadbirlarni tortib olib, qatnashuvchiga chiroyli HTML ro'yxat ko'rinishida chiqarish.
-  - 💡 **Nega kerak (Izoh):** Foydalanuvchilarning Telegramdagi buyruqlarini qabul qilib, ularga tushunarli vizual interfeys taqdim etish uchun.
-
-- [ ] **Aiogram 3 da Bot Kirish Nuqtasi (Main Entrypoint):**
-  - 📁 **Qaysi faylga:** `bot/main.py` [YANGI FAYL]
-  - 📝 **Nima yoziladi:** `Bot`, `Dispatcher` va `dp.include_router(router)` orqali asinxron polling rejimida botni ishga tushiruvchi `async def main()`.
-  - 💡 **Nega kerak (Izoh):** Botni terminalda mustaqil jarayon (`python -m bot.main`) sifatida ishga tushirish va Telegram serverlaridan yangilanishlarni (updates) qabul qilib turish uchun.
+# Umumiy ichki tarmoq
+networks:
+  evently_network:
+    driver: bridge
+```
 
 ---
 
-## 8-BOSQICH: Eslatmalar (Reminders) Tizimi va Avtomatlashtirish
+## 🔐 6-QADAM: `.env` Faylini Docker va Production Uchun Moslash
 
-> **Mentor eslatmasi:**  
-> "Tadbirdan 24 soat oldin barcha qatnashchilarga eslatma yuborish kerak. Buni amalga oshirish uchun Djangoda maxsus `Management Command` yozamiz. U terminaldan yoki Linux Crontab orqali avtomatik chaqiriladi."
+### ❓ Nimaga e'tibor berish kerak?
+- Docker muhitida Django bazaga ulanishi uchun `DB_HOST=db` bo'lishi kerak (`localhost` emas, chunki baza `db` nomli servisda ishlaydi).
+- Bot backendga ulanishi uchun `BACKEND_API_URL=http://web:8000/api/v1` bo'lishi shart.
+- `BOT_API_SECRET` backend va bot o'rtasidagi so'rovlarni himoya qilish uchun ikkalasida bir xil bo'lishi shart.
 
-### 🎯 Bu bosqichda nima ishlar qilinishi kerak?
+### 📝 Bajariladigan ish: Serverda (yoki Docker ishlatilganda) `.env` fayl namunasi:
 
-- [ ] **Eslatma buyrug'i fayl strukturasi:**
-  - 📁 **Qaysi papka/faylga:** `apps/events/management/commands/send_reminders.py` [YANGI FAYL]
-  - 📝 **Nima qilinadi:** Djangoda buyruqlar ishlashi uchun `management/` va `management/commands/` papkalarini yaratib ichiga bo'sh `__init__.py` qo'yish.
-  - 💡 **Nega kerak (Izoh):** Djangoning `python manage.py <buyruq_nomi>` tizimi aynan shu katalog ichidagi fayllarni qidiradi.
+```env
+# Django Asosiy
+DEBUG=False
+SECRET_KEY=xqzr6m-=8wpk-=khsy8m&)0ano1!_@w4#%tszydwk44lw+2g&3-super-secret-key-prod
+ALLOWED_HOSTS=*,localhost,127.0.0.1
+CSRF_TRUSTED_ORIGINS=http://localhost:8000,http://127.0.0.1:8000
+TIME_ZONE=Asia/Tashkent
 
-- [ ] **Eslatma yuborish mantiqi (Command logic):**
-  - 📁 **Qaysi faylga:** `apps/events/management/commands/send_reminders.py`
-  - 📝 **Nima yoziladi:** `Command(BaseCommand)` klassi:
-    - Hozirgi vaqt va 24 soatlik oraliqni hisoblash: `now = timezone.now()`, `target_time = now + timedelta(hours=24)`.
-    - 24 soat ichida boshlanadigan tadbirlarga yozilgan, statusi `confirmed`, eslatma hali bormagan (`reminder_sent=False`) va `telegram_chat_id` si bor arizalarni filtrlash:
-      ```python
-      registrations = Registration.objects.filter(
-          status='confirmed',
-          reminder_sent=False,
-          event__date__range=(now, target_time),
-          user__telegram_chat_id__isnull=False
-      ).select_related('user', 'event')
-      ```
-    - Telegram Bot API orqali xabar yuborish va `registration.reminder_sent = True` qilib saqlash.
-  - 💡 **Nega kerak (Izoh):** Tadbir boshlanishiga 1 kun qolganda qatnashchilarga Telegram orqali avtomatik eslatma jo'natish va bitta odamga bir necha bor xabar bormasligini ta'minlash uchun.
+# Database (Docker compose uchun)
+DB_NAME=evently_db
+DB_USER=postgres
+DB_PASSWORD=strong_postgres_password_2026!
+DB_HOST=db
+DB_PORT=5432
 
-- [ ] **Buyruqni sinab ko'rish:**
-  - 📁 **Qayerda:** Terminal
-  - 📝 **Nima qilinadi:** `python manage.py send_reminders` deb chaqirish.
-  - 💡 **Nega kerak (Izoh):** Serverda cron rejalashtiruvchiga qo'yishdan oldin komanda xatosiz ishlayotganiga ishonch hosil qilish uchun.
+# JWT Sozlamalari
+ACCESS_TOKEN_LIFETIME_MINUTES=60
+REFRESH_TOKEN_LIFETIME_DAYS=7
 
----
+# CORS
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
 
-## 9-BOSQICH: Avtomatlashtirilgan Testlar (Testing & QA)
+# Telegram Bot
+TELEGRAM_BOT_TOKEN=9230877104:AAEMtZJuZcuVL1rYM1wAKdrgQQfyWDwSuRo
+TELEGRAM_BOT_USERNAME=myeventlyBot
+BOT_API_SECRET=WNYUTp-YkgvHGELCTVlq2BjioJ3mPwkr8mBs4Cb7h7s
+BACKEND_API_URL=http://web:8000/api/v1
 
-> **Mentor eslatmasi:**  
-> "Avtomatlashtirilgan testlar — backendchining xavfsizlik kamari. Yangi funksiya qo'shganingizda eskilari sinib qolmasligini kafolatlash uchun asosiy biznes ssenariylarini `pytest` bilan tekshiramiz."
-
-### 🎯 Bu bosqichda nima ishlar qilinishi kerak?
-
-- [ ] **Pytest sozlamalari:**
-  - 📁 **Qaysi faylga:** `pytest.ini` [YANGI FAYL]
-  - 📝 **Nima yoziladi:**
-    ```ini
-    [pytest]
-    DJANGO_SETTINGS_MODULE = config.settings
-    python_files = tests.py test_*.py *_tests.py
-    ```
-  - 💡 **Nega kerak (Izoh):** Pytest kutubxonasi qaysi Django sozlamalaridan foydalanishni va qaysi fayllar test ekanligini bilishi uchun.
-
-- [ ] **Autentifikatsiya testlari:**
-  - 📁 **Qaysi faylga:** `tests/test_auth.py` [YANGI FAYL]
-  - 📝 **Nima yoziladi:**
-    - Ro'yxatdan o'tish testi (`status_code == 201`).
-    - Parollar mos kelmaganda `400 Bad Request` qaytishi.
-    - Login qilib JWT access va refresh token olish testi (`status_code == 200`).
-  - 💡 **Nega kerak (Izoh):** Foydalanuvchilar kirish tizimi hech qachon nosozlikka uchramasligini tekshirish uchun.
-
-- [ ] **Tadbirlar va Ruxsatlar testi:**
-  - 📁 **Qaysi faylga:** `tests/test_events.py` [YANGI FAYL]
-  - 📝 **Nima yoziladi:**
-    - Oddiy foydalanuvchi tadbir yaratmoqchi bo'lsa `403 Forbidden` olishi testi.
-    - Admin yaratganda `201 Created` bo'lishi testi.
-    - O'tib ketgan sanaga tadbir yaratib bo'lmasligi testi.
-  - 💡 **Nega kerak (Izoh):** Rollar (admin vs oddiy user) va sanalar to'g'ri ishlayotganini isbotlash uchun.
-
-- [ ] **Ro'yxatdan o'tish va Sig'im limiti testi:**
-  - 📁 **Qaysi faylga:** `tests/test_registrations.py` [YANGI FAYL]
-  - 📝 **Nima yoziladi:**
-    - Sig'imi 2 kishilik tadbirga 3-foydalanuvchi yozila olmasligi (`400 Bad Request`).
-    - Bir xil odam bir tadbirga ikki marta yozila olmasligi.
-    - Ariza bekor qilinganda joy qayta ochilishi testi.
-  - 💡 **Nega kerak (Izoh):** Asosiy biznes logikamiz — sig'im chegarasi va takroriy yozilishni taqiqlash to'g'ri ishlayotganini tekshirish uchun.
-
-- [ ] **Testlarni ishga tushirish:**
-  - 📁 **Qayerda:** Terminal
-  - 📝 **Nima qilinadi:** `uv run pytest -v`
-  - 💡 **Nega kerak (Izoh):** Barcha testlar yashil (`PASSED`) ekanligini ko'rish uchun.
+# Reminders
+REMINDER_HOURS_BEFORE=24
+```
 
 ---
 
-## 10-BOSQICH: Production Tayyorgarligi, Xavfsizlik va Deployment
+## 🧪 7-QADAM: Lokal Kompyuterda Docker Orqali Sinovdan O'tkazish (Test Run)
 
-> **Mentor eslatmasi:**  
-> "Oxirgi bosqich — loyihani internet tarmog'iga, butun dunyo foydalanishi uchun jonli serverga (VPS, Render yoki Railway) joylashtirish. Bu yerda xavfsizlik (`DEBUG=False`) va statik fayllar (`whitenoise`) eng muhim rol o'ynaydi."
+Serverga chiqishdan oldin o'zingizning kompyuteringizda Docker Desktop yoqilgan holda hamma narsani tekshirib ko'ring:
 
-### 🎯 Bu bosqichda nima ishlar qilinishi kerak?
+### 1) Loyihani konteynerda qurish va ishga tushirish:
+```bash
+docker compose up -d --build
+```
+*Bu buyruq `Dockerfile` asosida image quradi, Postgres, Web va Bot konteynerlarini ishga tushiradi, avtomatik `collectstatic` va `migrate` qiladi.*
 
-- [ ] **Xavfsizlik va Statik fayllar sozlamalari:**
-  - 📁 **Qaysi faylga:** `config/settings.py`
-  - 📝 **Nima yoziladi:**
-    - `MIDDLEWARE` ga `'whitenoise.middleware.WhiteNoiseMiddleware'` qo'shish.
-    - `STATIC_ROOT = BASE_DIR / 'staticfiles'`
-    - `STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'`
-  - 💡 **Nega kerak (Izoh):** Swagger UI dizayni va Django Admin paneli CSS/JS fayllari alohida Nginx'siz ham Python serverida tezkor tarqatilishi uchun.
+### 2) Admin (Superuser) yaratish:
+```bash
+docker compose exec web python manage.py createsuperuser
+```
+*Admin username, email va parolni kiriting.*
 
-- [ ] **WSGI Production Server buyruqlari:**
-  - 📁 **Qaysi faylga:** `Procfile` [YANGI FAYL]
-  - 📝 **Nima yoziladi:**
-    ```
-    web: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT
-    worker: python -m bot.main
-    ```
-  - 💡 **Nega kerak (Izoh):** Bulutli serverlar (masalan Render, Railway) Django veb-serverini va Telegram botni avtomatik ravishda fonda qanday ishga tushirishni bilishi uchun.
+### 3) Loglarni tekshirish:
+```bash
+# Telegram Bot logi:
+docker compose logs -f bot
+# Natijada: "Evently Telegram Bot ishga tushmoqda..." chiqishi kerak!
 
-- [ ] **Production deployment tekshiruvi:**
-  - 📁 **Qayerda:** Terminal
-  - 📝 **Nima qilinadi:** `python manage.py check --deploy` va `python manage.py collectstatic`.
-  - 💡 **Nega kerak (Izoh):** Xavfsizlikda ochiq qolgan teshiklar yo'qligini va statik fayllar yig'ilishini tekshirish uchun.
+# Web API logi:
+docker compose logs -f web
+```
+
+### 4) Brauzerda tekshirish:
+- **Swagger API hujjati:** `http://localhost:8000/api/docs/` ochilishi kerak.
+- **Jazzmin Admin paneli:** `http://localhost:8000/admin/` dizayn va stillar buzilmasdan chiqishi kerak.
+- **Telegram Bot:** Telegramda `@myeventlyBot` ga `/start` yuborib javob oling.
+
+### 5) Eslatmalar (Reminders) buyrug'ini Docker ichida sinab ko'rish:
+```bash
+docker compose exec web python manage.py send_event_reminders
+```
+*Natijada konsolda: `0 ta eslatma muvaffaqiyatli yuborildi.` (yoki eslatmalar yuborilgani) chiqsa, demak buyruq Docker ichida to'liq xatosiz ishlamoqda!*
+
+### 6) Sinov tugagach to'xtatish:
+```bash
+docker compose down
+```
 
 ---
 
-## 🎓 Mentordan Yakuniy Tavsiyalar va "Dasturchi Qoidalari"
+## 🚀 8-QADAM: Git Orqali Serverga (AWS EC2) Yuklash Ketma-ketligi
 
-1. **Fayllar chegarasini buzmang:**
-   - Hech qachon `views.py` ichida og'ir SQL so'rovlar yoki xom hisob-kitoblar qilmang — ularni `models.py` yoki `services.py` ga olib chiqing.
-   - Hech qachon `serializers.py` ichida HTTP status kodlar yoki response qaytarmang — uning ishi faqat tekshirish (validatsiya) va tozalashdir.
+Lokalda barcha fayllar tayyor bo'lgach, serverga yuklash jarayoni 4 ta oson qadamdan iborat bo'ladi:
 
-2. **Git commit madaniyati:**
-   - Har bir topshiriqni tugatgach, qaysi fayllarni o'zgartirganingizni yozib commit qiling:
-     - `feat(auth): add register serializer and view`
-     - `feat(events): implement event model and custom permission`
+### 1) Kodlarni Git orqali GitHub'ga jo'natish:
+```bash
+git add .
+git commit -m "feat: Add Dockerfile, docker-compose and production settings for deployment"
+git push origin develop
+```
 
-> **Keyingi qadam:**  
-> 1-bosqich yakunlangan! Endi **2-BOSQICH: Autentifikatsiya (JWT), Profil va Swagger** ga kirishamiz.  
-> Tayyor bo'lsangiz, birinchi topshiriq: `config/settings.py` da SimpleJWT va Swagger sozlamalarini ulaymiz!
+### 2) AWS EC2 serveriga SSH orqali kirish:
+```bash
+ssh -i "evently-key.pem" ubuntu@<SIZNING_AWS_ELASTIC_IP>
+```
+
+### 3) Serverda loyihani tortib olish:
+```bash
+git clone https://github.com/<sizning-repo>/Project-evently.git
+cd Project-evently/evently
+nano .env   # (Yuqoridagi 6-qadamdagi .env qiymatlarini kiritasiz)
+```
+
+### 4) Serverda ishga tushirish:
+```bash
+docker compose up -d --build
+docker compose exec web python manage.py createsuperuser
+```
+
+---
+
+## ⏰ 9-QADAM: Serverda Tadbirlar Eslatmasini (Reminders Crontab) Avtomatlashtirish
+
+Loyihangiz AWS serverida ishga tushgach, foydalanuvchilarga tadbir boshlanishidan 24 soat oldin bot orqali avtomatik eslatma borishi uchun serverning **Crontab** jadvaliga qo'shib qo'yiladi.
+
+### 📝 Serverda bajariladigan ish:
+AWS EC2 serveringiz terminalida:
+```bash
+crontab -e
+```
+*(Agar birinchi marta kirayotgan bo'lsangiz, muharrir sifatida `1` (nano) ni tanlang).*
+
+Faylning eng pastki qatoriga quyidagi buyruqni yozing:
+
+```bash
+# Har soat boshida tadbirlar eslatmasini avtomatik yuborish:
+0 * * * * cd /home/ubuntu/Project-evently/evently && docker compose exec -T web python manage.py send_event_reminders >> /var/log/evently_reminders.log 2>&1
+```
+
+Faylni saqlash uchun: `Ctrl + O`, `Enter` va chiqish uchun `Ctrl + X`.
+
+Endi server har soatda ushbu buyruqni o'zi orqa fonda avtomatik chaqiradi va foydalanuvchilaringiz tadbirni o'tkazib yubormasligi uchun doimiy eslatma olib turishadi!
+
+---
+
+## 📋 YAKUNIY NAZORAT RO'YXATI (DEPLOYMENT GA TAYYORLIK)
+
+- [ ] `gunicorn` va `whitenoise` o'rnatildi (`uv add gunicorn whitenoise`).
+- [ ] `config/settings.py` ga WhiteNoise middleware va `STATIC_ROOT` qo'shildi.
+- [ ] `.dockerignore` fayli yaratildi.
+- [ ] `Dockerfile` yaratildi.
+- [ ] `docker-compose.yml` yaratildi.
+- [ ] `.env` da `DB_HOST=db` va `BACKEND_API_URL=http://web:8000/api/v1` to'g'rilandi.
+- [ ] `docker compose up -d --build` orqali lokalda sinab ko'rildi.
+- [ ] `send_event_reminders` buyrug'i lokal Dockerda sinab ko'rildi.
+- [ ] GitHub'ga push qilindi va AWS serverda ishga tushirildi.
+- [ ] Serverda `crontab -e` orqali eslatmalar avtomatlashtirildi.
+
+---
+🎯 **Endi sizning Evently loyihangiz to'liq Dockerlashtirildi va istalgan Linux/AWS serverda bir necha daqiqada ishga tushishga tayyor!**

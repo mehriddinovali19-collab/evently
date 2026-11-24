@@ -34,6 +34,16 @@ DEBUG = env("DEBUG")
 
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["*"])
 
+ #HTTPS/Nginx orqasida to'g'ri ishlashi uchun:
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+
+# CSRF ruxsat berilgan domenlar
+CSRF_TRUSTED_ORIGINS = env.list(
+    "CSRF_TRUSTED_ORIGINS", 
+    default=["http://localhost:8000", "http://127.0.0.1"]
+)
+
 
 # Application definition
 
@@ -72,6 +82,7 @@ MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
 
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware', 
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -144,6 +155,11 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# WhiteNoise statik fayllarni siqish va xotirada keshlashtirish
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -182,3 +198,15 @@ SPECTACULAR_SETTINGS = {
 TELEGRAM_BOT_TOKEN = env('TELEGRAM_BOT_TOKEN')
 TELEGRAM_BOT_USERNAME = env('TELEGRAM_BOT_USERNAME')
 BOT_API_SECRET = env('BOT_API_SECRET')
+
+
+
+# Media fayllar (Tadbirlar rasmlari, foydalanuvchilar yuklagan fayllar)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+ #CORS sozlamasi (Frontend so'rovlariga ruxsat)
+CORS_ALLOWED_ORIGINS = env.list(
+    "CORS_ALLOWED_ORIGINS",
+    default=["http://localhost:3000", "http://localhost:5173"]
+)

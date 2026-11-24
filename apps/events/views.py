@@ -27,7 +27,7 @@ class EventViewSet(viewsets.ModelViewSet):
         return Event.objects.select_related('created_by').annotate(
             registered_count = Count(
                 'registrations',
-                filter=Q(registrations__status='confirmed') | Q(registrations__status='active'), distinct=True
+                filter=Q(registrations__status='confirmed'), distinct=True
             )
         )
         

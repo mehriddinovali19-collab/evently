@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+ # ==========================================
+  # 1. POSTGRESQL MA'LUMOTLAR BAZASI
+  # ==========================================
+  db:
+    image: postgres:16-alpine
+    container_name: evently_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME:-evently_db}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres_password_123}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - evently_network
+
+  # ==========================================
+  # 2. DJANGO WEB API & JAZZMIN ADMIN
+  # ==========================================
+  web: 
+    build: .
+    container_name: evently_web
+    restart: always
+    command: >
+      sh -c "python manage.py collectstatic --noinput &&
+             python manage.py migrate &&
+             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
+    volumes:
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DEBUG=False
+    depends_on:
+      - db
+    networks:
+      - evently_network
+
+# ==========================================
+  # 3. AIOGRAM TELEGRAM BOT
+  # ==========================================
+  bot:
+    build: .
+    container_name: evently_bot
+    restart: always
+    command: python -m bot.main
+    env_file:
+      - .env
+    environment:
+      # Bot backendga konteyner ichki tarmog'i orqali ulanadi:
+      - BACKEND_API_URL=http://web:8000/api/v1
+    depends_on:
+      - web
+    networks:
+      - evently_network
+  
+# Volume'lar (Ma'lumotlar saqlanib qolishi uchun)
+volumes:
+  postgres_data:
+  static_volume:
+  media_volume:
+
+# Umumiy ichki tarmoq
+networks:
+  evently_network:
+    driver: bridge

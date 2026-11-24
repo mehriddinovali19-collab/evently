@@ -24,7 +24,7 @@ class UserRegisterSerializers(serializers.ModelSerializer):
 
     def validate(self, attrs):
         if attrs['password'] != attrs['password_confirm']:
-            raise ValueError("Password and Password conform do not match! ")
+            raise serializers.ValidationError("Password and Password conform do not match! ")
         return attrs
 
 
@@ -37,5 +37,5 @@ class UserRegisterSerializers(serializers.ModelSerializer):
 class UserMeSerializers(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ('id', 'first_name', 'last_name', 'phone_number', 'role', 'telegram_chat_id', 'date_joined')
+        fields = ('id', 'first_name', 'last_name','email', 'phone_number', 'role', 'telegram_chat_id', 'date_joined')
         read_only_fields = ('id', 'email', 'role', 'telegram_chat_id', 'date_joined')

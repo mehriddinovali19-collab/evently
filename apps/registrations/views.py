@@ -4,15 +4,20 @@ from rest_framework import permissions, status, generics
 from .models import Registration
 from .serializers import RegistrationSerializer, MyRegistrationSerializer
 from .services import register_user_to_event, unregister_user_to_event
+from apps.notifications.services import notify_registration_success 
 
 class RegistrationView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, event_id: int):
-        registration = register_user_to_event(user=request.user, event_id=event_id)
-        serializer = RegistrationSerializer(registration)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+            registration = register_user_to_event(user=request.user, event_id=event_id)
 
+            # Telegram xabarnomasini chaqiramiz:
+            notify_registration_success(registration)
+
+            serializer = RegistrationSerializer(registration)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
 class EventUnregisterView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
